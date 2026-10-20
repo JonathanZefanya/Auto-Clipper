@@ -121,6 +121,7 @@ export interface Subtitles {
   duration: number
   edited: boolean
   stale: boolean
+  outdated: boolean
   clip_start: number
   clip_end: number
   lines: SubLine[]

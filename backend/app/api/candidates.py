@@ -45,6 +45,8 @@ def _subs_payload(c: Candidate, doc: subdoc.SubDoc, scfg: SubtitleConfig) -> dic
         "duration": round(c.end - c.start, 3),
         "edited": doc.edited,
         "stale": subdoc.is_stale(doc, c.start, c.end),
+        # subtitle otomatis dari pengaturan transkripsi lama → dibuat ulang saat render
+        "outdated": not doc.is_current(scfg),
         "clip_start": doc.clip_start,
         "clip_end": doc.clip_end,
         "lines": [
@@ -81,7 +83,7 @@ def put_subtitles(
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         job_dir = cfg.jobs_dir / c.job_id
-        doc = subdoc.SubDoc(c.start, c.end, lines, edited=True)
+        doc = subdoc.SubDoc(c.start, c.end, lines, edited=True, source=subdoc.fingerprint(cfg.subtitle))
         path = subdoc.save_doc(job_dir, c.rank, doc)
         c.subs_path = rel_path(path, job_dir)
         s.add(c)

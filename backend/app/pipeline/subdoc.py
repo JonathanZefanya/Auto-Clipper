@@ -5,6 +5,7 @@ Waktu baris relatif terhadap awal klip saat dokumen dibuat (`clip_start`). Jika 
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,18 +16,36 @@ from app.pipeline.subtitle import Line, Word, cap_lines
 MIN_LINE_S = 0.05
 
 
+TRANSCRIBE_KEYS = (
+    "model", "language", "beam_size", "vad_filter", "vad_threshold", "vad_min_silence_ms",
+    "vad_speech_pad_ms", "audio_filter", "max_word_s", "hallucination_max_s_per_word",
+)
+
+
+def fingerprint(scfg: SubtitleConfig) -> str:
+    """Sidik pengaturan transkripsi. Dokumen otomatis dengan sidik berbeda ditranskripsi ulang saat render."""
+    raw = json.dumps({k: getattr(scfg, k) for k in TRANSCRIBE_KEYS}, sort_keys=True)
+    return hashlib.sha1(raw.encode()).hexdigest()[:12]
+
+
 @dataclass
 class SubDoc:
     clip_start: float
     clip_end: float
     lines: list[Line] = field(default_factory=list)
     edited: bool = False
+    source: str = ""  # sidik pengaturan transkripsi (kosong = dokumen lama)
+
+    def is_current(self, scfg: SubtitleConfig) -> bool:
+        """Hasil edit pengguna selalu dipakai; dokumen otomatis hanya bila pengaturannya sama."""
+        return self.edited or self.source == fingerprint(scfg)
 
     def to_dict(self) -> dict:
         return {
             "clip_start": self.clip_start,
             "clip_end": self.clip_end,
             "edited": self.edited,
+            "source": self.source,
             "lines": [{"start": round(ln.start, 3), "end": round(ln.end, 3), "text": ln.text} for ln in self.lines],
         }
 
@@ -36,6 +55,7 @@ class SubDoc:
             clip_start=float(d["clip_start"]),
             clip_end=float(d["clip_end"]),
             edited=bool(d.get("edited", False)),
+            source=str(d.get("source", "")),
             lines=[Line(float(x["start"]), float(x["end"]), str(x["text"])) for x in d.get("lines", [])],
         )
 

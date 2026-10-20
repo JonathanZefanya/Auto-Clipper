@@ -240,7 +240,7 @@ def _transcribe_clip(tr: Any, source: Path, c: ClipSpec, scfg: SubtitleConfig) -
     from app.pipeline import subtitle
 
     dur = c.end - c.start
-    pcm = subtitle.extract_audio_segment(source, c.start, dur, scfg.sample_rate)
+    pcm = subtitle.extract_audio_segment(source, c.start, dur, scfg.sample_rate, scfg.audio_filter)
     words = subtitle.clamp_words(tr.transcribe(pcm), dur)
     return words, subtitle.group_words(words, scfg)
 
@@ -261,7 +261,8 @@ def run_transcribe(
         for i, c in enumerate(clips):
             report("transcribing", 100 * i / len(clips), f"transkripsi klip #{c.rank} ({tr.device})")
             words, lines = _transcribe_clip(tr, source, c, scfg)
-            path = subdoc.save_doc(job_dir, c.rank, subdoc.SubDoc(c.start, c.end, lines))
+            path = subdoc.save_doc(job_dir, c.rank, subdoc.SubDoc(c.start, c.end, lines,
+                                                                     source=subdoc.fingerprint(scfg)))
             out[c.rank] = rel_path(path, job_dir)
             log(f"#{c.rank}: {len(words)} kata → {len(lines)} baris ({tr.device})")
     log("model Whisper di-unload")
@@ -294,6 +295,8 @@ def run_render(
     need_text = {c.rank for c in clips if options.thumbnail and not c.thumb_text}
     # F-16: dokumen subtitle (hasil edit / transkripsi sebelumnya) dipakai apa adanya → Whisper dilewati.
     docs = {c.rank: subdoc.load_doc(job_dir, c.rank) for c in clips}
+    # dokumen otomatis dari pengaturan transkripsi lama → transkripsi ulang (hasil edit tetap dipakai)
+    docs = {r: d if d is not None and d.is_current(scfg) else None for r, d in docs.items()}
     to_transcribe = [
         c for c in clips
         if docs[c.rank] is None and (do_subs or c.rank in need_text)
@@ -323,7 +326,8 @@ def run_render(
                 words, lines = _transcribe_clip(tr, source, c, scfg)
                 words_by_rank[c.rank], lines_by_rank[c.rank] = words, lines
                 # simpan agar bisa diedit lalu dirender ulang tanpa Whisper
-                path = subdoc.save_doc(job_dir, c.rank, subdoc.SubDoc(c.start, c.end, lines))
+                path = subdoc.save_doc(job_dir, c.rank, subdoc.SubDoc(c.start, c.end, lines,
+                                                                     source=subdoc.fingerprint(scfg)))
                 results[c.rank].subs_path = rel_path(path, job_dir)
                 log(f"#{c.rank}: {len(words)} kata ({tr.device})")
         log("model Whisper di-unload")

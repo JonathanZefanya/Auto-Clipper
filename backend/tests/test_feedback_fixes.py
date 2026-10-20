@@ -46,6 +46,30 @@ def test_fallback_stays_out_of_outro():
     assert res.used_fallback and res.candidates[0].peak_time < 555
 
 
+def test_hallucination_filter_from_real_cases():
+    from app.pipeline.subtitle import is_hallucination
+
+    cfg = SubtitleConfig()
+    # halusinasi nyata: 3 kata direntang 16 dtk di bagian musik
+    assert is_hallucination(" BABAK 3 SELESAI", 3, 16.2, 0.95, cfg)
+    assert is_hallucination(" Terima kasih telah menonton!", 4, 4.5, 0.93, cfg)
+    assert is_hallucination(" Sampai jumpa di video selanjutnya.", 5, 2.0, 0.93, cfg)
+    # ucapan asli yang pelan: no_speech tinggi tapi TIDAK boleh dibuang
+    assert not is_hallucination(" Aduh, gimana ya, teman-teman?", 4, 1.0, 0.92, cfg)
+    assert not is_hallucination(" Gawat, gawat, gawat, gawat, gawat, gawat, gawat, gawat, gawat.", 9, 4.5, 0.92, cfg)
+    # outro asli streamer (no_speech rendah) tetap dipertahankan
+    assert not is_hallucination(" Sampai jumpa di video selanjutnya!", 5, 2.0, 0.1, cfg)
+
+
+def test_reduplication_tokens_joined():
+    from app.pipeline.subtitle import join_words
+
+    assert join_words(["ADUH,", "TEMAN", "-TEMAN?"]) == "ADUH, TEMAN-TEMAN?"
+    assert join_words(["COOKIE", "BOX", "-NYA"]) == "COOKIE BOX-NYA"
+    words = [Word(0, 0.3, "teman"), Word(0.3, 0.6, "-teman?")]
+    assert group_words(words, SubtitleConfig(uppercase=False))[0].text == "teman-teman?"
+
+
 def test_long_last_word_is_capped():
     # kasus nyata: "BABAK 3 SELESAI" 14.64 → 29.98 dtk
     words = [Word(14.64, 15.5, "BABAK"), Word(16.0, 16.8, "3"), Word(17.4, 29.98, "SELESAI")]

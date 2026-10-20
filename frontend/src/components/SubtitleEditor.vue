@@ -104,6 +104,10 @@ async function reset() {
     </template>
 
     <template v-else>
+      <p v-if="subs.outdated" class="rounded border border-cyan-900 bg-cyan-950/40 p-2 text-xs text-cyan-200">
+        Subtitle ini dari pengaturan transkripsi lama dan akan dibuat ulang otomatis saat render.
+        Klik <b>Transkripsi ulang</b> untuk melihat &amp; mengeditnya dulu.
+      </p>
       <p v-if="subs.stale" class="rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-300">
         Rentang klip berubah sejak transkripsi. Waktu sudah disesuaikan, tapi bagian baru belum bersubtitle —
         transkripsi ulang bila perlu.

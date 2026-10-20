@@ -35,3 +35,33 @@ def test_render_uses_edited_subtitles(tmp_path, monkeypatch):
     assert "TEKS EDITAN" in ass
     assert "Dialogue: 0,0:00:01.00,0:00:02.00" in ass  # 3–4 dtk digeser −2 dtk
     assert results[0].clip_path == "clips/clip_01.mp4" and results[0].subs_path is None
+
+
+def test_render_retranscribes_outdated_auto_subtitles(tmp_path, monkeypatch):
+    """Dokumen otomatis dari pengaturan lama (tanpa sidik) ditranskripsi ulang; hasil edit tidak."""
+    calls = []
+
+    class FakeTranscriber:
+        device = "cpu"
+
+        def __init__(self, *a, **k): ...
+        def __enter__(self): return self
+        def __exit__(self, *e): ...
+        def transcribe(self, pcm):
+            calls.append(1)
+            return [subtitle.Word(1.0, 1.5, "BARU")]
+
+    monkeypatch.setattr(render, "render_clip", lambda *a, **k: (a[1].write_bytes(b"x"), "libx264")[1])
+    monkeypatch.setattr(subtitle, "Transcriber", FakeTranscriber)
+    monkeypatch.setattr(subtitle, "extract_audio_segment", lambda *a, **k: None)
+    monkeypatch.setattr(runner.audio, "require_ffmpeg", lambda: "ffmpeg")
+
+    subdoc.save_doc(tmp_path, 1, subdoc.SubDoc(0, 30, [Line(1, 2, "LAMA")]))                # otomatis lama
+    subdoc.save_doc(tmp_path, 2, subdoc.SubDoc(0, 30, [Line(1, 2, "EDITAN")], edited=True))  # hasil edit
+    clips = [runner.ClipSpec(1, 0, 30, 10), runner.ClipSpec(2, 0, 30, 10)]
+    runner.run_render(tmp_path / "s.mp4", tmp_path, clips, Template("c", "center_crop"), RenderConfig(),
+                      SubtitleConfig(), ThumbnailConfig(), tmp_path, runner.RenderOptions(thumbnail=False))
+    assert len(calls) == 1                                  # hanya klip 1
+    assert "BARU" in (tmp_path / "clips" / "clip_01.ass").read_text(encoding="utf-8")
+    assert "EDITAN" in (tmp_path / "clips" / "clip_02.ass").read_text(encoding="utf-8")
+    assert subdoc.load_doc(tmp_path, 1).is_current(SubtitleConfig())

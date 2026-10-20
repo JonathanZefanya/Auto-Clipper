@@ -40,12 +40,16 @@ class Line:
 
 # ---------------------------------------------------------------- audio segmen
 
-def extract_audio_segment(source: Path, start: float, duration: float, sample_rate: int) -> np.ndarray:
-    """Audio mono float32 hanya untuk rentang klip (≤ 60 dtk ≈ 4 MB)."""
+def extract_audio_segment(
+    source: Path, start: float, duration: float, sample_rate: int, audio_filter: str = "",
+) -> np.ndarray:
+    """Audio mono float32 hanya untuk rentang klip (≤ 60 dtk ≈ 4 MB), opsional dengan filter FFmpeg
+    (mis. speechnorm agar suara streamer yang pelan terdengar oleh Whisper)."""
+    af = ["-af", audio_filter] if audio_filter else []
     cmd = [
         require_ffmpeg(), "-nostdin", "-v", "error",
         "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(source),
-        "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "pipe:1",
+        "-vn", *af, "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "pipe:1",
     ]
     proc = subprocess.run(cmd, capture_output=True)
     if proc.returncode != 0:
@@ -54,6 +58,22 @@ def extract_audio_segment(source: Path, start: float, duration: float, sample_ra
 
 
 # ---------------------------------------------------------------- whisper
+
+def is_hallucination(text: str, n_words: int, duration: float, no_speech_prob: float, cfg: SubtitleConfig) -> bool:
+    """Segmen Whisper yang kemungkinan halusinasi di bagian musik/suara game.
+
+    Tidak memakai no_speech_prob saja: ucapan asli yang pelan juga bisa bernilai ≥ 0.9 (uji nyata).
+    - kata "direntang" (mis. 3 kata dalam 16 dtk) → hampir pasti bukan ucapan;
+    - frasa penutup klasik ("terima kasih telah menonton", …) dengan no_speech tinggi.
+    """
+    if n_words and duration / n_words > cfg.hallucination_max_s_per_word:
+        return True
+    if no_speech_prob >= cfg.hallucination_min_no_speech:
+        low = text.lower()
+        if any(re.search(p, low) for p in cfg.hallucination_phrases):
+            return True
+    return False
+
 
 def _register_cuda_dlls() -> None:
     """Windows: tambahkan site-packages/nvidia/*/bin (cuBLAS dari pip) ke pencarian DLL."""
@@ -143,6 +163,10 @@ class Transcriber:
         )
         words: list[Word] = []
         for seg in segments:  # generator: inferensi terjadi di sini
+            n_words = len(seg.words or [])
+            if is_hallucination(seg.text, n_words, seg.end - seg.start, seg.no_speech_prob, self.cfg):
+                self.log(f"  segmen dibuang (halusinasi): {seg.text.strip()!r}")
+                continue
             for w in seg.words or []:
                 text = w.word.strip()
                 if text:
@@ -163,6 +187,15 @@ class Transcriber:
 # ---------------------------------------------------------------- kata -> baris
 
 _SENTENCE_END = re.compile(r"[.!?…,;:]$")
+
+
+def join_words(parts) -> str:
+    """Gabung token kata Whisper. Kata ulang/berimbuhan dipecah jadi 'teman' + '-teman', 'box' + '-nya'
+    → disambung tanpa spasi ("teman-teman", "box-nya")."""
+    out = ""
+    for p in parts:
+        out += p if (out and p.startswith("-")) or not out else f" {p}"
+    return out
 
 
 def cap_words(words: list[Word], max_word_s: float) -> list[Word]:
@@ -210,7 +243,7 @@ def group_words(words: list[Word], cfg: SubtitleConfig) -> list[Line]:
 
     lines: list[Line] = []
     for g in merged:
-        text = " ".join(w.text for w in g)
+        text = join_words(w.text for w in g)
         lines.append(Line(g[0].start, g[-1].end, text.upper() if cfg.uppercase else text))
 
     # Tahan baris sampai baris berikut bila jedanya kecil (mencegah kedip).

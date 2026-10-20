@@ -105,6 +105,20 @@ class SubtitleConfig(_Overridable):
     vad_min_silence_ms: int = 1000
     vad_speech_pad_ms: int = 500
     sample_rate: int = 16000
+    # Pra-proses audio sebelum Whisper: suara streamer sering pelan di bawah suara game.
+    # speechnorm menaikkan volume ucapan (uji nyata: kalimat yang terlewat jadi tertranskripsi). Kosong = mati.
+    audio_filter: str = "highpass=f=150,lowpass=f=4000,speechnorm=e=12.5:r=0.0001:l=1"
+
+    # Saring halusinasi Whisper di bagian musik/suara game
+    hallucination_max_s_per_word: float = 3.0   # segmen dgn kata "direntang" > ini dibuang
+    hallucination_min_no_speech: float = 0.5    # frasa klasik dibuang bila no_speech_prob ≥ ini
+    hallucination_phrases: tuple[str, ...] = (
+        r"terima kasih (telah|sudah|udah) menonton",
+        r"sampai jumpa (lagi )?di video (selanjutnya|berikutnya)",
+        r"jangan lupa (like|subscribe|komen)",
+        r"subtitle(s)? (oleh|by)",
+        r"thanks? for watching",
+    )
 
     # Pengelompokan kata ala Shorts
     min_words: int = 2
