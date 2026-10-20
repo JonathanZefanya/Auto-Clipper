@@ -127,12 +127,18 @@ class Transcriber:
             gc.collect()
 
     def _transcribe(self, audio: np.ndarray) -> list[Word]:
+        vad_params = dict(
+            threshold=self.cfg.vad_threshold,
+            min_silence_duration_ms=self.cfg.vad_min_silence_ms,
+            speech_pad_ms=self.cfg.vad_speech_pad_ms,
+        ) if self.cfg.vad_filter else None
         segments, _ = self.model.transcribe(
             audio,
             language=self.cfg.language,
             beam_size=self.cfg.beam_size,
             word_timestamps=True,
             vad_filter=self.cfg.vad_filter,
+            vad_parameters=vad_params,
             condition_on_previous_text=False,  # kurangi halusinasi berulang di bagian berisik
         )
         words: list[Word] = []
@@ -159,8 +165,19 @@ class Transcriber:
 _SENTENCE_END = re.compile(r"[.!?…,;:]$")
 
 
+def cap_words(words: list[Word], max_word_s: float) -> list[Word]:
+    """Batasi durasi kata: Whisper kadang memanjangkan kata sebelum jeda/musik sampai belasan detik."""
+    return [Word(w.start, min(w.end, w.start + max_word_s), w.text) for w in words]
+
+
+def cap_lines(lines: list[Line], max_s: float) -> list[Line]:
+    """Batasi lama tampil baris (untuk subtitle otomatis yang tersimpan sebelum cap_words ada)."""
+    return [Line(ln.start, min(ln.end, ln.start + max_s), ln.text) for ln in lines]
+
+
 def group_words(words: list[Word], cfg: SubtitleConfig) -> list[Line]:
     """Kelompokkan 2–4 kata per baris; pisah pada jeda panjang atau akhir kalimat."""
+    words = cap_words(words, cfg.max_word_s)
     groups: list[list[Word]] = []
     cur: list[Word] = []
     for i, w in enumerate(words):

@@ -32,8 +32,8 @@ def test_min_gap_keeps_only_strongest():
 
 
 def test_flat_signal_fallback_single_candidate():
-    audio = np.full(500, 0.3)
-    audio[250] = 0.31
+    # gelombang rata: semua puncak ≈ +1.4σ, jauh di bawah ambang 3.5σ → fallback 1 puncak
+    audio = 0.3 + 0.01 * np.sin(np.arange(500) / 5)
     res = detect(audio, None, 500, DetectConfig(sensitivity=0.0))
     assert len(res.candidates) == 1
     assert res.used_fallback

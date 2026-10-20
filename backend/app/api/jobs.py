@@ -218,6 +218,7 @@ def job_scores(
         "has_reaction": bool(data.get("has_reaction")),
         "threshold": data.get("threshold"),
         "used_fallback": data.get("used_fallback"),
+        "excluded": data.get("excluded") or [],
         "smoothed": data.get("smoothed"),
         "audio": data.get("audio"),
         "chat": data.get("chat"),

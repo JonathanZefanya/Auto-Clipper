@@ -152,6 +152,7 @@ def run_detect(
         "reaction": _round_list(reaction_score),
         "threshold": round(result.threshold, 4),
         "used_fallback": result.used_fallback,
+        "excluded": result.excluded,
         "config": cfg.to_dict(),
         "audio": _round_list(audio_score),
         "chat": _round_list(chat_score),
@@ -312,7 +313,7 @@ def run_render(
     for c in clips:
         doc = docs[c.rank]
         if doc is not None:
-            lines_by_rank[c.rank] = subdoc.shift_lines(doc, c.start, c.end)
+            lines_by_rank[c.rank] = subdoc.display_lines(doc, c.start, c.end, scfg)
             words_by_rank[c.rank] = subdoc.lines_to_words(lines_by_rank[c.rank])
     if to_transcribe:
         prog.step("transcribe", 0, "memuat model Whisper")

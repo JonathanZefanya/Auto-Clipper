@@ -1,7 +1,7 @@
 """F-05: skor gabungan, smoothing, peak picking, dan pembentukan kandidat klip."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import numpy as np
@@ -33,6 +33,7 @@ class DetectionResult:
     threshold: float
     used_fallback: bool
     candidates: list[Candidate]
+    excluded: list[list[int]] = field(default_factory=list)  # zona intro/outro yang dilewati
 
 
 def combine(
@@ -66,15 +67,57 @@ def smooth(x: np.ndarray, window_s: int) -> np.ndarray:
     return np.convolve(x, kernel, mode="same")[: x.size]
 
 
-def pick_peaks(s: np.ndarray, cfg: DetectConfig) -> tuple[np.ndarray, float, bool]:
-    """Indeks puncak di atas ambang mean + z·std, berjarak minimal min_peak_gap_s.
+def allowed_mask(n: int, cfg: DetectConfig) -> np.ndarray:
+    """False di zona intro (exclude_start_s) & outro (exclude_end_s).
+    Video pendek (zona ≥ separuh durasi) tidak dikecualikan sama sekali."""
+    mask = np.ones(n, dtype=bool)
+    a, b = max(0, cfg.exclude_start_s), max(0, cfg.exclude_end_s)
+    if n == 0 or a + b >= n * 0.5:
+        return mask
+    mask[:a] = False
+    if b:
+        mask[n - b:] = False
+    return mask
 
-    Jika tidak ada yang lolos ambang, kembalikan 1 puncak tertinggi (fallback).
+
+def excluded_ranges(mask: np.ndarray) -> list[list[int]]:
+    """[[mulai, akhir), ...] detik yang dikecualikan (untuk grafik)."""
+    out: list[list[int]] = []
+    start = None
+    for i, ok in enumerate(mask):
+        if not ok and start is None:
+            start = i
+        elif ok and start is not None:
+            out.append([start, i])
+            start = None
+    if start is not None:
+        out.append([start, int(mask.size)])
+    return out
+
+
+def pick_peaks(
+    s: np.ndarray, cfg: DetectConfig, allowed: np.ndarray | None = None,
+) -> tuple[np.ndarray, float, bool]:
+    """Indeks puncak di atas ambang mean + z·std (dihitung di zona yang diizinkan), berjarak
+    minimal min_peak_gap_s, dan tidak berada di zona intro/outro.
+
+    Jika tidak ada yang lolos ambang, kembalikan 1 puncak tertinggi di zona yang diizinkan (fallback).
     """
-    threshold = float(s.mean() + cfg.threshold_z * s.std())
-    peaks, _ = find_peaks(s, height=threshold, distance=max(1, cfg.min_peak_gap_s))
+    if allowed is None or not allowed.any():
+        allowed = np.ones(s.size, dtype=bool)
+    vals = s[allowed]
+    threshold = float(vals.mean() + cfg.threshold_z * vals.std())
+    masked = np.where(allowed, s, float(s.min()) - 1.0)
+    peaks, _ = find_peaks(masked, height=threshold, distance=max(1, cfg.min_peak_gap_s))
+    # buang "puncak palsu" di tepi zona: sinyal masih naik ke dalam intro/outro
+    n = s.size
+    peaks = np.array([
+        p for p in peaks
+        if not (p + 1 < n and not allowed[p + 1] and s[p + 1] > s[p])
+        and not (p - 1 >= 0 and not allowed[p - 1] and s[p - 1] > s[p])
+    ], dtype=int)
     if peaks.size == 0:
-        return np.array([int(np.argmax(s))]), threshold, True
+        return np.array([int(np.argmax(masked))]), threshold, True
     return peaks, threshold, False
 
 
@@ -118,6 +161,7 @@ def detect(
         raise ValueError("Sinyal kosong: tidak ada audio yang bisa dianalisis.")
     duration_s = max(duration_s, combined.size)
     smoothed = smooth(combined, cfg.smooth_window_s)
-    peaks, threshold, fallback = pick_peaks(smoothed, cfg)
+    allowed = allowed_mask(smoothed.size, cfg)
+    peaks, threshold, fallback = pick_peaks(smoothed, cfg, allowed)
     candidates = build_candidates(peaks, smoothed, duration_s, cfg)
-    return DetectionResult(combined, smoothed, threshold, fallback, candidates)
+    return DetectionResult(combined, smoothed, threshold, fallback, candidates, excluded_ranges(allowed))

@@ -39,6 +39,17 @@ const overlay: Plugin<'line'> = {
     const { ctx, chartArea: a, scales } = c
     const x = scales.x
     ctx.save()
+    // zona intro/outro yang tidak dijadikan kandidat
+    for (const [s0, s1] of props.scores.excluded ?? []) {
+      const x0 = Math.max(a.left, x.getPixelForValue(s0))
+      const x1 = Math.min(a.right, x.getPixelForValue(s1))
+      ctx.fillStyle = 'rgba(9,9,11,0.55)'
+      ctx.fillRect(x0, a.top, Math.max(1, x1 - x0), a.bottom - a.top)
+      ctx.fillStyle = '#52525b'
+      ctx.font = '10px Inter, system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      if (x1 - x0 > 30) ctx.fillText(s0 === 0 ? 'intro' : 'outro', (x0 + x1) / 2, a.bottom - 6)
+    }
     for (const cand of props.scores.candidates) {
       const x0 = Math.max(a.left, x.getPixelForValue(cand.start))
       const x1 = Math.min(a.right, x.getPixelForValue(cand.end))

@@ -6,7 +6,7 @@ from sqlalchemy.engine import Engine
 
 from app.api import deps
 from app.api.schemas import CandidateOut, CandidatePatch, SubtitlesIn
-from app.config import AppConfig
+from app.config import AppConfig, SubtitleConfig
 from app.db import session
 from app.models import Candidate, Job
 from app.pipeline import subdoc
@@ -39,7 +39,7 @@ def _candidate_ctx(s, candidate_id: int, w: Worker, write: bool = False) -> tupl
     return c, job
 
 
-def _subs_payload(c: Candidate, doc: subdoc.SubDoc) -> dict:
+def _subs_payload(c: Candidate, doc: subdoc.SubDoc, scfg: SubtitleConfig) -> dict:
     return {
         "candidate_id": c.id,
         "duration": round(c.end - c.start, 3),
@@ -49,7 +49,7 @@ def _subs_payload(c: Candidate, doc: subdoc.SubDoc) -> dict:
         "clip_end": doc.clip_end,
         "lines": [
             {"start": ln.start, "end": ln.end, "text": ln.text}
-            for ln in subdoc.shift_lines(doc, c.start, c.end)
+            for ln in subdoc.display_lines(doc, c.start, c.end, scfg)
         ],
     }
 
@@ -65,7 +65,7 @@ def get_subtitles(
     doc = subdoc.load_doc(cfg.jobs_dir / c.job_id, c.rank)
     if doc is None:
         raise HTTPException(404, "Belum ada transkripsi untuk klip ini")
-    return _subs_payload(c, doc)
+    return _subs_payload(c, doc, cfg.subtitle)
 
 
 @router.put("/{candidate_id}/subtitles")
@@ -87,7 +87,7 @@ def put_subtitles(
         s.add(c)
         s.commit()
         s.refresh(c)
-        return _subs_payload(c, doc)
+        return _subs_payload(c, doc, cfg.subtitle)
 
 
 @router.delete("/{candidate_id}/subtitles", status_code=204)

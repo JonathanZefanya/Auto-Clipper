@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api, errorMessage, type Box, type Template } from '@/api'
 import { fmtTime } from '@/format'
+import { coverStyle as coverStyleOf } from '@/layout'
 import { useAppStore } from '@/stores/app'
 import { useJobsStore } from '@/stores/jobs'
 
@@ -9,7 +10,6 @@ const app = useAppStore()
 const jobs = useJobsStore()
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
-const FULL: Box = { x: 0, y: 0, w: 1, h: 1 }
 
 const edit = reactive<Template>({ name: '', layout_type: 'split', facecam_box: null, gameplay_box: null, top_ratio: 0.4 })
 const mode = ref<'facecam' | 'gameplay'>('facecam')
@@ -95,17 +95,7 @@ function boxStyle(b: Box | null) {
 const PW = 180
 const PH = 320
 function coverStyle(b: Box | null, tw: number, th: number) {
-  const box = b ?? FULL
-  const bw = box.w * natural.w
-  const bh = box.h * natural.h
-  const s = Math.max(tw / bw, th / bh)
-  return {
-    width: `${tw}px`,
-    height: `${th}px`,
-    backgroundImage: frameUrl.value ? `url(${frameUrl.value})` : undefined,
-    backgroundSize: `${natural.w * s}px ${natural.h * s}px`,
-    backgroundPosition: `${-box.x * natural.w * s - (bw * s - tw) / 2}px ${-box.y * natural.h * s - (bh * s - th) / 2}px`,
-  }
+  return coverStyleOf(frameUrl.value, natural, b, tw, th)
 }
 const topH = computed(() => Math.round(PH * edit.top_ratio))
 

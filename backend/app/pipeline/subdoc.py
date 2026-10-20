@@ -9,7 +9,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.pipeline.subtitle import Line, Word
+from app.config import SubtitleConfig
+from app.pipeline.subtitle import Line, Word, cap_lines
 
 MIN_LINE_S = 0.05
 
@@ -75,6 +76,13 @@ def shift_lines(doc: SubDoc, start: float, end: float) -> list[Line]:
         if e - s >= MIN_LINE_S:
             out.append(Line(round(s, 3), round(e, 3), ln.text))
     return out
+
+
+def display_lines(doc: SubDoc, start: float, end: float, scfg: SubtitleConfig) -> list[Line]:
+    """Baris untuk ditampilkan/dirender. Subtitle otomatis dirapikan (batas lama tampil);
+    hasil edit pengguna dipakai apa adanya."""
+    lines = shift_lines(doc, start, end)
+    return lines if doc.edited else cap_lines(lines, scfg.max_line_s + scfg.max_word_s)
 
 
 def is_stale(doc: SubDoc, start: float, end: float) -> bool:

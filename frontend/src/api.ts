@@ -86,6 +86,7 @@ export interface Scores {
   has_reaction: boolean
   threshold: number
   used_fallback: boolean
+  excluded: [number, number][]
   smoothed: number[]
   audio: number[] | null
   chat: number[] | null

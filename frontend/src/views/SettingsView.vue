@@ -15,6 +15,8 @@ const detectFields: NumField[] = [
   { key: 'pad_before_s', label: 'Padding sebelum puncak (detik)', min: 0, max: 60, step: 1 },
   { key: 'pad_after_s', label: 'Padding sesudah puncak (detik)', min: 0, max: 60, step: 1 },
   { key: 'max_clip_s', label: 'Durasi klip maksimal (detik)', min: 5, max: 60, step: 1 },
+  { key: 'exclude_start_s', label: 'Lewati awal video (detik)', min: 0, max: 600, step: 5, hint: 'Intro/sapaan tidak dijadikan klip.' },
+  { key: 'exclude_end_s', label: 'Lewati akhir video (detik)', min: 0, max: 600, step: 5, hint: 'Outro ("sampai jumpa") tidak dijadikan klip.' },
   { key: 'w_audio', label: 'Bobot audio', min: 0, max: 1, step: 0.05 },
   { key: 'w_chat', label: 'Bobot chat', min: 0, max: 1, step: 0.05 },
   { key: 'w_reaction', label: 'Bobot tawa/teriak', min: 0, max: 1, step: 0.05, hint: 'Sinyal YAMNet (tawa, teriak, sorak).' },

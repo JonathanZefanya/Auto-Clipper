@@ -31,6 +31,9 @@ class DetectConfig(_Overridable):
     pad_after_s: int = 15
     max_clip_s: int = 60
     smooth_window_s: int = 5
+    # Puncak di awal (intro/sapaan) & akhir video (outro "sampai jumpa") tidak dijadikan kandidat
+    exclude_start_s: int = 30
+    exclude_end_s: int = 45
 
     # Bobot skor gabungan (PRD §12.4); tanpa chat -> audio saja
     w_audio: float = 0.5
@@ -97,6 +100,10 @@ class SubtitleConfig(_Overridable):
     cpu_compute_type: str = "int8"
     beam_size: int = 5
     vad_filter: bool = True
+    # VAD lebih longgar dari default Silero (0.5): teriakan bercampur suara game tetap tertangkap
+    vad_threshold: float = 0.3
+    vad_min_silence_ms: int = 1000
+    vad_speech_pad_ms: int = 500
     sample_rate: int = 16000
 
     # Pengelompokan kata ala Shorts
@@ -104,6 +111,8 @@ class SubtitleConfig(_Overridable):
     max_words: int = 4
     max_word_gap_s: float = 0.6       # jeda lebih panjang -> baris baru
     max_line_s: float = 2.5
+    # Whisper kadang memanjangkan kata terakhir sampai melewati jeda panjang (baris "menggantung")
+    max_word_s: float = 1.2
     hold_gap_s: float = 0.3           # tahan baris sampai baris berikut jika jedanya sekecil ini
     uppercase: bool = True
 
@@ -280,6 +289,7 @@ def validate_settings(cfg: AppConfig) -> None:
         (d.min_peak_gap_s >= 1, "detect.min_peak_gap_s harus ≥ 1"),
         (d.pad_before_s >= 0 and d.pad_after_s >= 0, "padding tidak boleh negatif"),
         (1 <= d.max_clip_s <= 60, "detect.max_clip_s harus 1..60"),
+        (0 <= d.exclude_start_s <= 600 and 0 <= d.exclude_end_s <= 600, "pengecualian intro/outro harus 0..600 dtk"),
         (min(d.w_audio, d.w_chat, d.w_reaction) >= 0 and d.w_audio + d.w_chat + d.w_reaction > 0,
          "bobot harus ≥ 0 dan tidak semuanya 0"),
         (0 <= d.chat_delay_s <= 60, "detect.chat_delay_s harus 0..60"),
