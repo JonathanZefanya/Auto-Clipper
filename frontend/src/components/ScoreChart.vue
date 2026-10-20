@@ -10,7 +10,7 @@ import {
   Tooltip,
   type Plugin,
 } from 'chart.js'
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import type { Scores } from '@/api'
 import { fmtTime } from '@/format'
 
@@ -20,17 +20,32 @@ const props = defineProps<{ scores: Scores; activeId: number | null; playhead: n
 const emit = defineEmits<{ select: [id: number]; seek: [t: number] }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
-const showReaction = ref(false)
 let chart: Chart | null = null
 
-function toggleReaction() {
-  showReaction.value = !showReaction.value
-  const ds = chart?.data.datasets.find((d) => d.label === 'Tawa/teriak')
+/** Sinyal tambahan yang bisa ditampilkan sebagai garis tipis di atas skor gabungan. */
+const EXTRAS = [
+  { key: 'reaction', label: 'Tawa/teriak', color: 'rgba(244,114,182,0.6)', css: 'border-pink-400', text: 'text-pink-300' },
+  { key: 'face', label: 'Ekspresi wajah', color: 'rgba(34,211,238,0.6)', css: 'border-cyan-400', text: 'text-cyan-300' },
+] as const
+type ExtraKey = (typeof EXTRAS)[number]['key']
+const shown = reactive<Record<ExtraKey, boolean>>({ reaction: false, face: false })
+const available = computed(() => EXTRAS.filter((e) => props.scores[`has_${e.key}`] && props.scores[e.key]))
+
+function toggle(key: ExtraKey) {
+  shown[key] = !shown[key]
+  const label = EXTRAS.find((e) => e.key === key)!.label
+  const ds = chart?.data.datasets.find((d) => d.label === label)
   if (ds) {
-    ds.hidden = !showReaction.value
+    ds.hidden = !shown[key]
     chart?.update('none')
   }
 }
+
+const signalText = computed(() => {
+  const s = props.scores
+  return ['audio', s.has_chat && 'chat', s.has_reaction && 'tawa/teriak', s.has_face && 'ekspresi wajah']
+    .filter(Boolean).join(' + ')
+})
 
 /** Gambar rentang kandidat (bayangan), nomor rank, dan playhead di belakang/depan garis. */
 const overlay: Plugin<'line'> = {
@@ -102,18 +117,16 @@ function build() {
           fill: true,
           tension: 0,
         },
-        ...(s.has_reaction && s.reaction
-          ? [{
-              label: 'Tawa/teriak',
-              data: s.reaction.map((y, i) => ({ x: i, y })),
-              borderColor: 'rgba(244,114,182,0.55)',
-              borderWidth: 1,
-              pointRadius: 0,
-              fill: false,
-              tension: 0,
-              hidden: !showReaction.value,
-            }]
-          : []),
+        ...available.value.map((e) => ({
+          label: e.label,
+          data: (s[e.key] ?? []).map((y, i) => ({ x: i, y })),
+          borderColor: e.color,
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+          hidden: !shown[e.key],
+        })),
         {
           label: 'Ambang',
           data: [
@@ -189,16 +202,18 @@ watch(
         <span><span class="mr-1 inline-block h-2 w-3 rounded-sm bg-emerald-400/30" />dipilih</span>
         <span><span class="mr-1 inline-block h-0 w-3 border-t border-dashed border-amber-400" />ambang</span>
         <button
-          v-if="scores.has_reaction"
+          v-for="e in available"
+          :key="e.key"
           type="button"
           class="hover:text-zinc-200"
-          :class="showReaction ? 'text-pink-300' : ''"
-          @click="toggleReaction"
+          :class="shown[e.key] ? e.text : ''"
+          @click="toggle(e.key)"
         >
-          <span class="mr-1 inline-block h-0 w-3 border-t border-pink-400" />tawa/teriak {{ showReaction ? '✓' : '' }}
+          <span class="mr-1 inline-block h-0 w-3 border-t" :class="e.css" />{{ e.label.toLowerCase() }}
+          {{ shown[e.key] ? '✓' : '' }}
         </button>
-        <span class="text-zinc-500">
-          sinyal: audio{{ scores.has_chat ? ' + chat' : '' }}{{ scores.has_reaction ? ' + tawa/teriak' : '' }}
+        <span class="text-zinc-500" :title="scores.face_info?.skipped ? `ekspresi wajah: ${scores.face_info.skipped}` : undefined">
+          sinyal: {{ signalText }}
         </span>
       </span>
     </div>

@@ -91,6 +91,9 @@ export interface Scores {
   audio: number[] | null
   chat: number[] | null
   reaction: number[] | null
+  has_face: boolean
+  face: number[] | null
+  face_info: { box?: Box; detect_frac?: number; skipped?: string } | null
   candidates: Pick<Candidate, 'id' | 'rank' | 'peak_time' | 'start' | 'end' | 'score' | 'selected'>[]
 }
 

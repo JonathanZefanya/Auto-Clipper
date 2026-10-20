@@ -18,7 +18,7 @@ Semua proses berjalan di PC sendiri: tanpa API berbayar, tanpa upload otomatis. 
 |---|---|
 | Input link | `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/live/` + preview judul, channel, durasi |
 | Unduh | Video maks 1080p + live chat replay (jika ada) via yt-dlp |
-| Deteksi momen | Skor per detik dari audio + chat + **tawa/teriak (YAMNet)**, jumlah klip fleksibel (bisa 1, bisa banyak) |
+| Deteksi momen | Skor per detik dari audio + chat + **tawa/teriak (YAMNet)** + **ekspresi wajah di facecam**, jumlah klip fleksibel (bisa 1, bisa banyak) |
 | Review | Grafik skor, daftar kandidat, preview video per rentang, trim awal/akhir ±1/±5 dtk |
 | Template 9:16 | **Split** (facecam atas + gameplay bawah) atau **center crop**, editor kotak facecam di UI + **deteksi facecam otomatis** |
 | Render | FFmpeg `h264_nvenc` (fallback `libx264`), 1080×1920, maks 60 detik |
@@ -34,10 +34,11 @@ Semua proses berjalan di PC sendiri: tanpa API berbayar, tanpa upload otomatis. 
 2. RMS per detik (dB) dibandingkan dengan **baseline median bergerak 60 detik** → yang terdeteksi lonjakan, bukan sekadar suara keras konstan (`audio_z`).
 3. Jika ada live chat: jumlah pesan per detik (window 10 detik), dinormalisasi dengan cara yang sama, lalu digeser mundur `chat_delay` (default 7 detik) (`chat_z`).
 4. Reaksi vokal: YAMNet mengklasifikasi audio yang sama (tawa, teriak, sorak, …) → probabilitas per detik, dinormalisasi sebagai lonjakan (`reaction_z`).
-5. Skor = `w_audio · audio_z + w_chat · chat_z + w_reaction · reaction_z` (default 0.5 / 0.5 / 0.5; bobot dinormalisasi atas sinyal yang tersedia — tanpa chat, sinyal chat dilewati).
-6. Smoothing → peak picking dengan ambang sensitivitas dan jarak minimal antar puncak (default 60 detik).
-7. Tiap puncak → klip dari 20 detik sebelum sampai 15 detik sesudah puncak, maks 60 detik; klip yang overlap digabung.
-8. Diurutkan dan diskalakan 0–100. Jika tidak ada yang melewati ambang, diambil 1 puncak tertinggi.
+5. Ekspresi wajah (bila ada facecam): area facecam dibaca ±2 fps, MediaPipe Face Landmarker menilai ekspresi kaget/tertawa → lonjakan relatif (`face_z`). Dilewati otomatis untuk video tanpa facecam atau avatar VTuber yang tak terbaca.
+6. Skor = `w_audio · audio_z + w_chat · chat_z + w_reaction · reaction_z + w_face · face_z` (default masing-masing 0.5; bobot dinormalisasi atas sinyal yang tersedia).
+7. Smoothing → peak picking dengan ambang sensitivitas dan jarak minimal antar puncak (default 60 detik). 30 detik pertama & 45 detik terakhir (intro/outro) tidak dijadikan kandidat.
+8. Tiap puncak → klip dari 20 detik sebelum sampai 15 detik sesudah puncak, maks 60 detik; klip yang overlap digabung.
+9. Diurutkan dan diskalakan 0–100. Jika tidak ada yang melewati ambang, diambil 1 puncak tertinggi.
 
 Semua angka di atas bisa diubah di halaman **Pengaturan** atau `data/config.json`.
 

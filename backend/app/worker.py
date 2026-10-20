@@ -276,7 +276,7 @@ class Worker:
         reporter = DbReporter(self.engine, job_id, cancel_event=self._cancel_event)
         try:
             out = self.detect_fn(url, job_dir, cfg.detect, reporter,
-                                 models_dir=cfg.models_dir, log=reporter.log)
+                                 models_dir=cfg.models_dir, log=reporter.log, facecam_cfg=cfg.facecam)
         except (DownloadError, RuntimeError, ValueError, OSError) as e:
             self._fail(job_id, str(e))
             return

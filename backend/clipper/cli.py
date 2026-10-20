@@ -67,6 +67,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
         w_chat=args.w_chat,
         w_reaction=args.w_reaction,
         reaction_enabled=False if args.no_reaction else None,
+        w_face=args.w_face,
+        face_enabled=False if args.no_face else None,
     )
     job = create_job(app_cfg.jobs_dir, args.job_id or video_id, args.url)
     print(f"Job: {job.id}  ({job.dir})")
@@ -80,7 +82,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
     try:
         out = run_detect(args.url, job.dir, cfg, report, force_download=args.force_download,
-                         models_dir=app_cfg.models_dir,
+                         models_dir=app_cfg.models_dir, facecam_cfg=app_cfg.facecam,
                          log=lambda m: (reporter.close(), print(f"  {m}")))
     except (download.DownloadError, RuntimeError, ValueError) as e:
         reporter.close()
@@ -95,7 +97,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
     print(f"\nJudul   : {out.meta.title}\nChannel : {out.meta.channel}\nDurasi  : {fmt_time(out.meta.duration)}")
     print(f"Live chat: {'ada' if out.has_chat else 'tidak ada (pakai audio saja)'}")
-    print(f"Tawa/teriak (YAMNet): {'dipakai' if out.has_reaction else 'tidak dipakai'}\n")
+    print(f"Tawa/teriak (YAMNet): {'dipakai' if out.has_reaction else 'tidak dipakai'}")
+    print(f"Ekspresi wajah     : {'dipakai' if out.has_face else 'tidak dipakai'}\n")
     if out.used_fallback:
         print("Tidak ada puncak yang melewati ambang; mengambil 1 puncak tertinggi.")
     print(f"{len(out.candidates)} kandidat (sensitivity={cfg.sensitivity}, ambang z={cfg.threshold_z:.2f}):\n")
@@ -245,6 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--w-chat", type=float, help="Bobot skor chat")
     p.add_argument("--w-reaction", type=float, help="Bobot skor tawa/teriak (YAMNet)")
     p.add_argument("--no-reaction", action="store_true", help="Matikan deteksi tawa/teriak")
+    p.add_argument("--w-face", type=float, help="Bobot skor ekspresi wajah")
+    p.add_argument("--no-face", action="store_true", help="Matikan deteksi ekspresi wajah")
     p.add_argument("--job-id", help="ID job (default: video id)")
     p.add_argument("--data-dir", help="Folder data (default: <repo>/data)")
     p.add_argument("--force-download", action="store_true", help="Unduh ulang walau file sudah ada")

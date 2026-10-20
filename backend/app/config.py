@@ -63,6 +63,18 @@ class DetectConfig(_Overridable):
         "Shout", "Bellow", "Whoop", "Yell", "Screaming", "Cheering", "Children shouting",
     )
 
+    # Reaksi wajah (F-18): MediaPipe Face Landmarker (blendshapes) di area facecam
+    face_enabled: bool = True
+    w_face: float = 0.5
+    face_fps: float = 2.0               # frame per detik yang dibaca (decode CPU ±25× realtime untuk 1080p60)
+    face_size: int = 256                # area facecam di-scale ke ukuran ini sebelum dibaca
+    face_baseline_s: int = 60
+    face_min_detect_frac: float = 0.3   # wajah harus terdeteksi di ≥ 30% frame (avatar VTuber sering gagal)
+    face_model_url: str = (
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
+        "face_landmarker/float16/1/face_landmarker.task"
+    )
+
     # Unduhan (F-02)
     download_max_height: int = 1080
 
@@ -304,8 +316,10 @@ def validate_settings(cfg: AppConfig) -> None:
         (d.pad_before_s >= 0 and d.pad_after_s >= 0, "padding tidak boleh negatif"),
         (1 <= d.max_clip_s <= 60, "detect.max_clip_s harus 1..60"),
         (0 <= d.exclude_start_s <= 600 and 0 <= d.exclude_end_s <= 600, "pengecualian intro/outro harus 0..600 dtk"),
-        (min(d.w_audio, d.w_chat, d.w_reaction) >= 0 and d.w_audio + d.w_chat + d.w_reaction > 0,
+        (min(d.w_audio, d.w_chat, d.w_reaction, d.w_face) >= 0
+         and d.w_audio + d.w_chat + d.w_reaction + d.w_face > 0,
          "bobot harus ≥ 0 dan tidak semuanya 0"),
+        (0.25 <= d.face_fps <= 10, "detect.face_fps harus 0.25..10"),
         (0 <= d.chat_delay_s <= 60, "detect.chat_delay_s harus 0..60"),
         (d.download_max_height in (360, 480, 720, 1080, 1440, 2160), "resolusi unduhan tidak didukung"),
         (s.device in ("auto", "cuda", "cpu"), "subtitle.device harus auto|cuda|cpu"),

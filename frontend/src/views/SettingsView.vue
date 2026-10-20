@@ -20,6 +20,7 @@ const detectFields: NumField[] = [
   { key: 'w_audio', label: 'Bobot audio', min: 0, max: 1, step: 0.05 },
   { key: 'w_chat', label: 'Bobot chat', min: 0, max: 1, step: 0.05 },
   { key: 'w_reaction', label: 'Bobot tawa/teriak', min: 0, max: 1, step: 0.05, hint: 'Sinyal YAMNet (tawa, teriak, sorak).' },
+  { key: 'w_face', label: 'Bobot ekspresi wajah', min: 0, max: 1, step: 0.05, hint: 'Kaget / tertawa di facecam.' },
   { key: 'chat_delay_s', label: 'Chat delay (detik)', min: 0, max: 30, step: 1, hint: 'Sinyal chat digeser mundur sebesar ini.' },
 ]
 
@@ -57,7 +58,7 @@ async function save() {
   try {
     const body: Record<string, unknown> = {
       detect: pick(form.detect, [
-        'sensitivity', 'download_max_height', 'reaction_enabled', ...detectFields.map((f) => f.key),
+        'sensitivity', 'download_max_height', 'reaction_enabled', 'face_enabled', ...detectFields.map((f) => f.key),
       ]),
       subtitle: pick(form.subtitle, ['enabled', 'model', 'device', 'language']),
       thumbnail: pick(form.thumbnail, ['enabled', 'landscape', 'intro_frame']),
@@ -96,6 +97,10 @@ async function save() {
       <label class="flex items-center gap-2 text-sm">
         <input v-model="form.detect.reaction_enabled" type="checkbox" class="accent-violet-500" />
         Deteksi tawa/teriak (YAMNet) sebagai sinyal tambahan
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input v-model="form.detect.face_enabled" type="checkbox" class="accent-violet-500" />
+        Deteksi ekspresi wajah di facecam (menambah ±5% durasi video ke waktu analisis)
       </label>
       <div class="grid gap-4 sm:grid-cols-2">
         <div v-for="f in detectFields" :key="f.key">

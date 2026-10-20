@@ -27,6 +27,7 @@ Daftar fitur beserta kriteria penerimaan. Konteks produk ada di `PRD.md`.
 | F-15 | Deteksi tawa/teriak (YAMNet) | P1 | M5 |
 | F-16 | Edit subtitle sebelum render | P1 | M5 |
 | F-17 | Auto-deteksi posisi facecam | P1 | M5 |
+| F-18 | Deteksi reaksi wajah (ekspresi) | P1 | M6 |
 
 ---
 
@@ -188,6 +189,18 @@ Sinyal tambahan untuk skor momen: reaksi vokal yang khas momen seru.
 - Wajah dideteksi per frame (MediaPipe, dengan tiling agar wajah kecil di overlay facecam terdeteksi), lalu dikelompokkan; facecam = kelompok wajah yang posisinya stabil di banyak frame.
 - Kotak facecam diperluas dari kotak wajah dan disesuaikan dengan rasio area atas layout split.
 - Jika tidak ada wajah yang stabil, tampilkan pesan yang jelas (kotak bisa digambar manual).
+
+## F-18 — Deteksi Reaksi Wajah (Ekspresi)
+
+Sinyal tambahan untuk YouTuber yang menampilkan wajah (facecam / face reveal).
+
+**Kriteria penerimaan**
+- Area wajah diambil dari auto-deteksi facecam (F-17); tanpa wajah yang stabil → sinyal dilewati.
+- Frame area facecam dibaca ±2 fps secara streaming (hemat RAM), ekspresi dibaca dengan MediaPipe Face Landmarker (blendshapes): kaget (mulut terbuka, mata melebar, alis naik) dan tertawa (senyum + mulut terbuka).
+- Skor per detik dinormalisasi sebagai lonjakan relatif (baseline median 60 detik) → `face_z`, masuk skor gabungan dengan bobot `w_face`.
+- Jika wajah jarang terdeteksi (mis. avatar VTuber), sinyal otomatis dilewati agar tidak menambah noise.
+- Bisa dimatikan dan bobotnya diatur di Pengaturan; ditampilkan di grafik; bisa dibatalkan seperti langkah lain.
+- Target waktu: ≤ ±5% durasi video untuk 1080p (decode CPU).
 
 ---
 

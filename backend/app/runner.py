@@ -5,13 +5,13 @@ Modul ini tidak tahu soal job.json / SQLite; status & progres dilaporkan lewat `
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
 
-from app.config import DetectConfig, RenderConfig, SubtitleConfig, ThumbnailConfig
+from app.config import DetectConfig, FacecamConfig, RenderConfig, SubtitleConfig, ThumbnailConfig
 from app.jobs import write_json
 from app.pipeline import audio, chat, detect, download, subdoc
 from app.pipeline.detect import Candidate
@@ -49,6 +49,7 @@ class DetectOutput:
     used_fallback: bool
     threshold: float
     has_reaction: bool = False
+    has_face: bool = False
 
 
 def load_or_fetch_meta(url: str, job_dir: Path, force: bool = False) -> download.VideoMeta:
@@ -76,10 +77,47 @@ def _open_reaction_scorer(cfg: DetectConfig, models_dir: Path | None, log: Calla
         return None
 
 
+def _analyze_face(
+    source: Path, duration_s: int, cfg: DetectConfig, fc_cfg: FacecamConfig, models_dir: Path | None,
+    progress: Callable[[float, str], None], log: Callable[[str], None],
+) -> tuple[np.ndarray | None, dict | None]:
+    """F-18: cari facecam (F-17) → ekspresi per detik → face_z. Tanpa facecam / wajah jarang terdeteksi /
+    error → (None, info) dan analisis lanjut tanpa sinyal ini. Pembatalan (Cancelled) diteruskan."""
+    if not cfg.face_enabled or models_dir is None or duration_s <= 0:
+        return None, None
+    from app.pipeline import face_reaction, facecam, thumbnail
+    from app.pipeline.assets import ensure_model
+
+    try:
+        progress(0, "mencari facecam")
+        det_model = ensure_model(models_dir, ThumbnailConfig().face_model_url, log=log)
+        with thumbnail.FaceDetector(det_model, fc_cfg.min_confidence) as det:
+            fc = facecam.detect_facecam(source, duration_s, 0.4, RenderConfig(), fc_cfg, det)
+        if fc is None:
+            log("tidak ada facecam yang stabil → sinyal wajah dilewati")
+            return None, {"skipped": "tidak ada facecam"}
+        lm_model = ensure_model(models_dir, cfg.face_model_url, log=log)
+        per_sec, frac = face_reaction.analyze_face(
+            source, fc.box, duration_s, cfg, lm_model,
+            on_progress=lambda pct: progress(pct, "analisis ekspresi wajah"),
+        )
+    except Cancelled:
+        raise
+    except (RuntimeError, OSError, ValueError, ImportError) as e:
+        log(f"analisis wajah gagal, dilewati: {e}")
+        return None, {"skipped": str(e)}
+    info = {"box": asdict(fc.box), "detect_frac": round(frac, 3)}
+    if frac < cfg.face_min_detect_frac:
+        log(f"wajah hanya terdeteksi di {frac:.0%} frame → sinyal wajah dilewati")
+        return None, {**info, "skipped": "wajah jarang terdeteksi"}
+    per_sec = np.pad(per_sec, (0, max(0, duration_s - per_sec.size)))[:duration_s]
+    return face_reaction.face_scores(per_sec, cfg), info
+
+
 def run_detect(
     url: str, job_dir: Path, cfg: DetectConfig, report: Reporter = _noop,
     force_download: bool = False, models_dir: Path | None = None,
-    log: Callable[[str], None] = lambda _m: None,
+    log: Callable[[str], None] = lambda _m: None, facecam_cfg: FacecamConfig | None = None,
 ) -> DetectOutput:
     """Unduh (reuse bila ada) → analisis audio & chat → kandidat. Menulis meta/scores/candidates.json.
 
@@ -116,12 +154,14 @@ def run_detect(
 
     # ---- F-03 .. F-05
     report("analyzing", 0, "analisis audio")
+    # porsi progres: audio cepat, ekspresi wajah butuh decode video (lebih lama)
+    audio_span = 30.0 if cfg.face_enabled and models_dir is not None else 90.0
     scorer = _open_reaction_scorer(cfg, models_dir, log)
     label = "analisis audio + tawa/teriak" if scorer else "analisis audio"
     try:
         _, audio_score = audio.analyze_audio(
             source, cfg, duration_s=meta.duration or None,
-            on_progress=lambda pct: report("analyzing", pct * 0.9, label),
+            on_progress=lambda pct: report("analyzing", pct * audio_span / 100, label),
             consumers=[scorer.feed] if scorer else (),
         )
     finally:
@@ -135,6 +175,11 @@ def run_detect(
 
         reaction_score = reaction_scores(scorer.per_second(duration_s), cfg)
 
+    face_score, face_info = _analyze_face(
+        source, duration_s, cfg, facecam_cfg or FacecamConfig(), models_dir,
+        lambda pct, msg: report("analyzing", audio_span + pct * (90 - audio_span) / 100, msg), log,
+    )
+
     chat_score = None
     if chat_path is not None:
         report("analyzing", 90, "analisis chat")
@@ -143,13 +188,16 @@ def run_detect(
             chat_score = chat.chat_scores(offsets, duration_s, cfg)
         report("analyzing", 97, f"{offsets.size} pesan chat")
 
-    result = detect.detect(audio_score, chat_score, duration_s, cfg, reaction=reaction_score)
+    result = detect.detect(audio_score, chat_score, duration_s, cfg, reaction=reaction_score, face=face_score)
     write_json(job_dir / "scores.json", {
         "fps": 1,
         "duration": duration_s,
         "has_chat": chat_score is not None,
         "has_reaction": reaction_score is not None,
         "reaction": _round_list(reaction_score),
+        "has_face": face_score is not None,
+        "face": _round_list(face_score),
+        "face_info": face_info,
         "threshold": round(result.threshold, 4),
         "used_fallback": result.used_fallback,
         "excluded": result.excluded,
@@ -162,7 +210,8 @@ def run_detect(
     write_json(job_dir / "candidates.json", [c.to_dict() for c in result.candidates])
     report("analyzing", 100, f"{len(result.candidates)} kandidat ditemukan")
     return DetectOutput(meta, chat_score is not None, result.candidates, result.used_fallback,
-                        result.threshold, has_reaction=reaction_score is not None)
+                        result.threshold, has_reaction=reaction_score is not None,
+                        has_face=face_score is not None)
 
 
 # ================================================================ render

@@ -38,16 +38,15 @@ class DetectionResult:
 
 def combine(
     audio: np.ndarray, chat: np.ndarray | None, cfg: DetectConfig, reaction: np.ndarray | None = None,
+    face: np.ndarray | None = None,
 ) -> np.ndarray:
-    """w_audio·audio + w_chat·chat + w_reaction·reaction, bobot dinormalisasi atas sinyal yang ada.
-
-    Tanpa chat dan reaksi → audio saja.
+    """w_audio·audio + w_chat·chat + w_reaction·reaction + w_face·face, bobot dinormalisasi atas
+    sinyal yang ada. Tanpa sinyal tambahan → audio saja.
     """
     signals = [(audio, cfg.w_audio)]
-    if chat is not None and chat.size:
-        signals.append((chat, cfg.w_chat))
-    if reaction is not None and reaction.size:
-        signals.append((reaction, cfg.w_reaction))
+    for extra, w in ((chat, cfg.w_chat), (reaction, cfg.w_reaction), (face, cfg.w_face)):
+        if extra is not None and extra.size:
+            signals.append((extra, w))
     if len(signals) == 1:
         return audio.astype(np.float64)
     total = sum(w for _, w in signals)
@@ -154,9 +153,9 @@ def build_candidates(
 
 def detect(
     audio: np.ndarray, chat: np.ndarray | None, duration_s: int, cfg: DetectConfig,
-    reaction: np.ndarray | None = None,
+    reaction: np.ndarray | None = None, face: np.ndarray | None = None,
 ) -> DetectionResult:
-    combined = combine(audio, chat, cfg, reaction)
+    combined = combine(audio, chat, cfg, reaction, face)
     if combined.size == 0:
         raise ValueError("Sinyal kosong: tidak ada audio yang bisa dianalisis.")
     duration_s = max(duration_s, combined.size)
