@@ -19,7 +19,8 @@ def test_save_settings_partial_and_data_dir(tmp_path):
 
 @pytest.mark.parametrize("updates", [
     {"detect": {"max_clip_s": 90}},
-    {"detect": {"w_audio": 0, "w_chat": 0}},
+    {"detect": {"w_audio": 0, "w_chat": 0, "w_reaction": 0}},
+    {"detect": {"w_reaction": -1}},
     {"detect": {"download_max_height": 999}},
     {"subtitle": {"device": "tpu"}},
     {"render": {"video_encoder": "x"}},

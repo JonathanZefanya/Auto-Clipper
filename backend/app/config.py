@@ -47,6 +47,19 @@ class DetectConfig(_Overridable):
     audio_baseline_s: int = 60
     audio_floor_db: float = -100.0
 
+    # Reaksi tawa/teriak (F-15): YAMNet via MediaPipe AudioClassifier
+    reaction_enabled: bool = True
+    w_reaction: float = 0.5
+    reaction_baseline_s: int = 60
+    reaction_model_url: str = (
+        "https://storage.googleapis.com/mediapipe-models/audio_classifier/"
+        "yamnet/float32/1/yamnet.tflite"
+    )
+    reaction_classes: tuple[str, ...] = (
+        "Laughter", "Giggle", "Snicker", "Belly laugh", "Chuckle, chortle",
+        "Shout", "Bellow", "Whoop", "Yell", "Screaming", "Cheering", "Children shouting",
+    )
+
     # Unduhan (F-02)
     download_max_height: int = 1080
 
@@ -150,11 +163,30 @@ class ThumbnailConfig(_Overridable):
     text_y_bottom: float = 0.72
 
 
+@dataclass(frozen=True)
+class FacecamConfig(_Overridable):
+    # F-17: auto-deteksi facecam
+    frames: int = 12                    # jumlah frame sampel di sepanjang video
+    sample_from: float = 0.05           # rentang sampel (fraksi durasi), hindari intro/outro
+    sample_to: float = 0.95
+    frame_width: int = 1280
+    frame_height: int = 720
+    tile_grid: int = 3                  # tiling N×N (overlap 50%) agar wajah kecil terdeteksi
+    min_confidence: float = 0.5
+    nms_iou: float = 0.4
+    cluster_dist: float = 0.6           # jarak pusat maks (× lebar wajah) untuk satu kelompok
+    min_frame_frac: float = 0.3         # wajah facecam harus muncul di ≥ 30% frame
+    expand_w: float = 2.8               # lebar kotak facecam = lebar wajah × ini
+    min_expand_h: float = 1.8           # tinggi kotak minimal = tinggi wajah × ini
+    face_y_in_box: float = 0.42         # posisi pusat wajah di dalam kotak (dari atas)
+
+
 SECTIONS: dict[str, type] = {
     "detect": DetectConfig,
     "render": RenderConfig,
     "subtitle": SubtitleConfig,
     "thumbnail": ThumbnailConfig,
+    "facecam": FacecamConfig,
 }
 
 
@@ -165,6 +197,7 @@ class AppConfig:
     render: RenderConfig = field(default_factory=RenderConfig)
     subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
     thumbnail: ThumbnailConfig = field(default_factory=ThumbnailConfig)
+    facecam: FacecamConfig = field(default_factory=FacecamConfig)
     config_file: Path = DEFAULT_DATA_DIR / "config.json"
 
     @property
@@ -247,7 +280,8 @@ def validate_settings(cfg: AppConfig) -> None:
         (d.min_peak_gap_s >= 1, "detect.min_peak_gap_s harus ≥ 1"),
         (d.pad_before_s >= 0 and d.pad_after_s >= 0, "padding tidak boleh negatif"),
         (1 <= d.max_clip_s <= 60, "detect.max_clip_s harus 1..60"),
-        (d.w_audio >= 0 and d.w_chat >= 0 and d.w_audio + d.w_chat > 0, "bobot harus ≥ 0 dan tidak keduanya 0"),
+        (min(d.w_audio, d.w_chat, d.w_reaction) >= 0 and d.w_audio + d.w_chat + d.w_reaction > 0,
+         "bobot harus ≥ 0 dan tidak semuanya 0"),
         (0 <= d.chat_delay_s <= 60, "detect.chat_delay_s harus 0..60"),
         (d.download_max_height in (360, 480, 720, 1080, 1440, 2160), "resolusi unduhan tidak didukung"),
         (s.device in ("auto", "cuda", "cpu"), "subtitle.device harus auto|cuda|cpu"),

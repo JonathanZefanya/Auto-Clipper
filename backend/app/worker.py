@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import queue
+import shutil
 import threading
 import time
 from dataclasses import asdict
@@ -23,7 +24,7 @@ from app.templates import ensure_default_templates, load_template
 
 log = logging.getLogger("autoclip.worker")
 
-TASKS = ("detect", "render")
+TASKS = ("detect", "transcribe", "render")
 
 
 class DbReporter:
@@ -114,11 +115,13 @@ class Worker:
     def __init__(
         self, engine: Engine, config_loader: Callable[[], AppConfig],
         detect_fn: Callable = runner.run_detect, render_fn: Callable = runner.run_render,
+        transcribe_fn: Callable = runner.run_transcribe,
     ) -> None:
         self.engine = engine
         self.config_loader = config_loader
         self.detect_fn = detect_fn
         self.render_fn = render_fn
+        self.transcribe_fn = transcribe_fn
         self._queue: queue.Queue[tuple[str, str] | None] = queue.Queue()
         self._pending: list[str] = []
         self._skip: set[str] = set()          # job antre yang dibatalkan sebelum sempat jalan
@@ -163,6 +166,13 @@ class Worker:
         berhenti di laporan progres berikutnya), atau 'idle' (tidak sedang diproses)."""
         with self._lock:
             if job_id == self.current:
+                # tulis pesan DULU, baru set tanda batal → status akhir dari worker tidak tertimpa
+                with session(self.engine) as s:
+                    job = s.get(Job, job_id)
+                    if job is not None:
+                        job.message = "membatalkan…"
+                        s.add(job)
+                        s.commit()
                 self._cancel_event.set()
                 result = "running"
             elif job_id in self._pending:
@@ -171,26 +181,23 @@ class Worker:
                 result = "queued"
             else:
                 result = "idle"
-        if result == "running":
-            with session(self.engine) as s:
-                job = s.get(Job, job_id)
-                if job is not None:
-                    job.message = "membatalkan…"
-                    s.add(job)
-                    s.commit()
-        else:
+        if result != "running":
             self._mark_cancelled(job_id, task)
         return result
 
+    def _restore_review(self, job_id: str, message: str) -> None:
+        """Kembali ke status review: 'done' bila sudah ada klip, selain itu 'ready_for_review'."""
+        with session(self.engine) as s:
+            rendered = s.exec(
+                select(Candidate).where(Candidate.job_id == job_id, Candidate.clip_path != None)  # noqa: E711
+            ).first()
+        set_status(self.engine, job_id, "done" if rendered else "ready_for_review",
+                   progress=100, message=message)
+
     def _mark_cancelled(self, job_id: str, task: str) -> None:
-        """Unduh/analisis batal → failed (bisa dihapus). Render batal → kembali ke status sebelumnya."""
-        if task == "render":
-            with session(self.engine) as s:
-                rendered = s.exec(
-                    select(Candidate).where(Candidate.job_id == job_id, Candidate.clip_path != None)  # noqa: E711
-                ).first()
-            set_status(self.engine, job_id, "done" if rendered else "ready_for_review",
-                       progress=100, message="render dibatalkan")
+        """Unduh/analisis batal → failed (bisa dihapus). Transkripsi/render batal → kembali ke review."""
+        if task in ("render", "transcribe"):
+            self._restore_review(job_id, "render dibatalkan" if task == "render" else "transkripsi dibatalkan")
         else:
             set_status(self.engine, job_id, "failed", progress=0, message=None,
                        error="Dibatalkan oleh pengguna")
@@ -233,6 +240,8 @@ class Worker:
             try:
                 if task == "detect":
                     self._run_detect(job_id)
+                elif task == "transcribe":
+                    self._run_transcribe(job_id)
                 else:
                     self._run_render(job_id)
             except Exception as e:  # worker tidak boleh mati karena satu job
@@ -266,7 +275,8 @@ class Worker:
         reuse_existing_source(cfg.jobs_dir, job_dir, video_id)
         reporter = DbReporter(self.engine, job_id, cancel_event=self._cancel_event)
         try:
-            out = self.detect_fn(url, job_dir, cfg.detect, reporter)
+            out = self.detect_fn(url, job_dir, cfg.detect, reporter,
+                                 models_dir=cfg.models_dir, log=reporter.log)
         except (DownloadError, RuntimeError, ValueError, OSError) as e:
             self._fail(job_id, str(e))
             return
@@ -277,6 +287,7 @@ class Worker:
             job = s.get(Job, job_id)
             if job is None:
                 return
+            shutil.rmtree(job_dir / "subs", ignore_errors=True)  # rank kandidat baru → subtitle lama tak berlaku
             job.title, job.channel, job.duration = out.meta.title, out.meta.channel, out.meta.duration
             job.thumbnail = out.meta.thumbnail or job.thumbnail
             job.has_chat = out.has_chat
@@ -291,16 +302,47 @@ class Worker:
             s.add(job)
             s.commit()
 
+    def _selected(self, s, job_id: str) -> list[Candidate]:
+        return list(s.exec(
+            select(Candidate).where(Candidate.job_id == job_id, Candidate.selected == True)  # noqa: E712
+            .order_by(Candidate.rank)
+        ).all())
+
+    def _run_transcribe(self, job_id: str) -> None:
+        """F-16: transkripsi kandidat terpilih → dokumen subtitle yang bisa diedit (tanpa render)."""
+        cfg = self.config_loader()
+        with session(self.engine) as s:
+            if s.get(Job, job_id) is None:
+                return
+            specs = [runner.ClipSpec(c.rank, c.start, c.end, c.peak_time) for c in self._selected(s, job_id)]
+        job_dir = cfg.jobs_dir / job_id
+        reporter = DbReporter(self.engine, job_id, cancel_event=self._cancel_event)
+        try:
+            paths = self.transcribe_fn(job_dir / "source.mp4", job_dir, specs, cfg.subtitle,
+                                       report=reporter, log=reporter.log)
+        except ImportError as e:
+            self._fail(job_id, f"Library belum terpasang ({e}). Jalankan: pip install -e \".[dev,cuda]\"")
+            return
+        except (RuntimeError, ValueError, OSError) as e:
+            self._fail(job_id, str(e))
+            return
+        if self._cancel_event.is_set():
+            raise runner.Cancelled()
+        with session(self.engine) as s:
+            for c in s.exec(select(Candidate).where(Candidate.job_id == job_id)).all():
+                if c.rank in paths:
+                    c.subs_path = paths[c.rank]
+                    s.add(c)
+            s.commit()
+        self._restore_review(job_id, f"{len(paths)} klip ditranskripsi — subtitle bisa diedit")
+
     def _run_render(self, job_id: str) -> None:
         cfg = self.config_loader()
         with session(self.engine) as s:
             job = s.get(Job, job_id)
             if job is None:
                 return
-            cands = s.exec(
-                select(Candidate).where(Candidate.job_id == job_id, Candidate.selected == True)  # noqa: E712
-                .order_by(Candidate.rank)
-            ).all()
+            cands = self._selected(s, job_id)
             options = runner.RenderOptions(**json.loads(job.render_options or "{}"))
             template_name, credit = job.template, runner.Credit(job.title, job.url, job.channel)
         job_dir = cfg.jobs_dir / job_id

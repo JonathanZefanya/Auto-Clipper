@@ -19,7 +19,7 @@ VID = "dQw4w9WgXcQ"
 URL = f"https://youtu.be/{VID}"
 
 
-def fake_detect(url, job_dir: Path, cfg, report, force_download=False):
+def fake_detect(url, job_dir: Path, cfg, report, force_download=False, **kw):
     report("downloading", 50, "mengunduh video")
     (job_dir / "source.mp4").write_bytes(b"0123456789" * 100)
     report("analyzing", 50, "analisis audio")
@@ -53,11 +53,23 @@ def fake_render(source, job_dir: Path, clips, template, rcfg, scfg, tcfg, models
     return out
 
 
+def fake_transcribe(source, job_dir: Path, clips, scfg, report=None, log=None):
+    from app.pipeline import subdoc
+    from app.pipeline.subtitle import Line
+
+    out = {}
+    for c in clips:
+        report("transcribing", 50, f"transkripsi klip #{c.rank}")
+        doc = subdoc.SubDoc(c.start, c.end, [Line(1.0, 2.0, "HALO SEMUA"), Line(10.0, 12.0, "WAH GILA")])
+        out[c.rank] = subdoc.save_doc(job_dir, c.rank, doc).relative_to(job_dir).as_posix()
+    return out
+
+
 def failing_detect(*a, **k):
     raise DownloadError("Video tidak tersedia")
 
 
-def slow_detect(url, job_dir, cfg, report, force_download=False):
+def slow_detect(url, job_dir, cfg, report, force_download=False, **kw):
     for i in range(1000):  # ±10 dtk bila tidak dibatalkan
         report("downloading", i / 10, "mengunduh video")
         time.sleep(0.01)
@@ -82,7 +94,8 @@ def wait_current(app, job_id, timeout=5.0):
 
 def make_client(tmp_path, **kw):
     app = create_app(tmp_path, detect_fn=kw.pop("detect_fn", fake_detect),
-                     render_fn=kw.pop("render_fn", fake_render), sse_poll_s=0.02, **kw)
+                     render_fn=kw.pop("render_fn", fake_render),
+                     transcribe_fn=kw.pop("transcribe_fn", fake_transcribe), sse_poll_s=0.02, **kw)
     return app, TestClient(app)
 
 
@@ -272,6 +285,52 @@ def test_cancel_stale_active_status(tmp_path):
             s.commit()
         r = client.post(f"/api/jobs/{job_id}/cancel")
         assert r.status_code == 200 and r.json()["status"] == "failed"
+
+
+def test_transcribe_and_edit_subtitles(ready):
+    app, client, job_id = ready
+    cands = client.get(f"/api/jobs/{job_id}").json()["candidates"]
+    c1 = cands[0]
+    assert client.post(f"/api/jobs/{job_id}/transcribe").status_code == 400          # belum ada pilihan
+    assert client.get(f"/api/candidates/{c1['id']}/subtitles").status_code == 404     # belum transkripsi
+
+    client.patch(f"/api/candidates/{c1['id']}", json={"selected": True})
+    r = client.post(f"/api/jobs/{job_id}/transcribe")
+    assert r.status_code == 202 and r.json()["status"] == "queued"
+    wait(app)
+    job = client.get(f"/api/jobs/{job_id}").json()
+    assert job["status"] == "ready_for_review" and "ditranskripsi" in job["message"]
+    assert job["candidates"][0]["subs_path"] == "subs/clip_01.json"
+    assert job["candidates"][1]["subs_path"] is None
+
+    subs = client.get(f"/api/candidates/{c1['id']}/subtitles").json()
+    assert subs["edited"] is False and subs["stale"] is False and subs["duration"] == 35
+    assert [ln["text"] for ln in subs["lines"]] == ["HALO SEMUA", "WAH GILA"]
+
+    lines = [{"start": 1.0, "end": 2.5, "text": "HALO GUYS"}, {"start": 10.0, "end": 12.0, "text": "WAH GILA!"}]
+    r = client.put(f"/api/candidates/{c1['id']}/subtitles", json={"lines": lines})
+    assert r.status_code == 200 and r.json()["edited"] is True
+    assert r.json()["lines"][0]["text"] == "HALO GUYS"
+    bad = [{"start": 30, "end": 40, "text": "x"}]  # melewati durasi klip 35 dtk
+    assert client.put(f"/api/candidates/{c1['id']}/subtitles", json={"lines": bad}).status_code == 422
+
+    # trim: awal maju 5 dtk → baris 1 (1–2.5 dtk) keluar klip, baris 2 bergeser ke 5–7 dtk
+    client.patch(f"/api/candidates/{c1['id']}", json={"start": 105})
+    subs = client.get(f"/api/candidates/{c1['id']}/subtitles").json()
+    assert subs["stale"] is True and subs["duration"] == 30
+    assert subs["lines"] == [{"start": 5.0, "end": 7.0, "text": "WAH GILA!"}]
+
+    assert client.delete(f"/api/candidates/{c1['id']}/subtitles").status_code == 204
+    assert client.get(f"/api/candidates/{c1['id']}/subtitles").status_code == 404
+    assert client.get(f"/api/jobs/{job_id}").json()["candidates"][0]["subs_path"] is None
+
+
+def test_detect_facecam_requires_source(tmp_path):
+    app, client = make_client(tmp_path, start_worker=False)
+    with client:
+        job_id = client.post("/api/jobs", json={"url": URL}).json()["id"]
+        assert client.post(f"/api/jobs/{job_id}/detect-facecam", json={}).status_code == 404
+        assert client.post(f"/api/jobs/{job_id}/detect-facecam", json={"top_ratio": 2}).status_code == 422
 
 
 def test_recover_interrupted_job(tmp_path):

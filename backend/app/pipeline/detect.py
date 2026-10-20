@@ -35,17 +35,28 @@ class DetectionResult:
     candidates: list[Candidate]
 
 
-def combine(audio: np.ndarray, chat: np.ndarray | None, cfg: DetectConfig) -> np.ndarray:
-    """w_audio·audio + w_chat·chat (bobot dinormalisasi). Tanpa chat → audio saja."""
-    if chat is None or chat.size == 0:
+def combine(
+    audio: np.ndarray, chat: np.ndarray | None, cfg: DetectConfig, reaction: np.ndarray | None = None,
+) -> np.ndarray:
+    """w_audio·audio + w_chat·chat + w_reaction·reaction, bobot dinormalisasi atas sinyal yang ada.
+
+    Tanpa chat dan reaksi → audio saja.
+    """
+    signals = [(audio, cfg.w_audio)]
+    if chat is not None and chat.size:
+        signals.append((chat, cfg.w_chat))
+    if reaction is not None and reaction.size:
+        signals.append((reaction, cfg.w_reaction))
+    if len(signals) == 1:
         return audio.astype(np.float64)
-    n = max(audio.size, chat.size)
-    a = np.pad(audio.astype(np.float64), (0, n - audio.size))
-    c = np.pad(chat.astype(np.float64), (0, n - chat.size))
-    total = cfg.w_audio + cfg.w_chat
+    total = sum(w for _, w in signals)
     if total <= 0:
-        raise ValueError("w_audio + w_chat harus > 0")
-    return (cfg.w_audio * a + cfg.w_chat * c) / total
+        raise ValueError("Jumlah bobot sinyal harus > 0")
+    n = max(s.size for s, _ in signals)
+    out = np.zeros(n)
+    for s, w in signals:
+        out += w * np.pad(s.astype(np.float64), (0, n - s.size))
+    return out / total
 
 
 def smooth(x: np.ndarray, window_s: int) -> np.ndarray:
@@ -99,9 +110,10 @@ def build_candidates(
 
 
 def detect(
-    audio: np.ndarray, chat: np.ndarray | None, duration_s: int, cfg: DetectConfig
+    audio: np.ndarray, chat: np.ndarray | None, duration_s: int, cfg: DetectConfig,
+    reaction: np.ndarray | None = None,
 ) -> DetectionResult:
-    combined = combine(audio, chat, cfg)
+    combined = combine(audio, chat, cfg, reaction)
     if combined.size == 0:
         raise ValueError("Sinyal kosong: tidak ada audio yang bisa dianalisis.")
     duration_s = max(duration_s, combined.size)

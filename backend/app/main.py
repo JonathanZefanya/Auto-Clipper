@@ -19,7 +19,7 @@ from app import runner
 from app.api import candidates, jobs, settings, templates
 from app.config import REPO_ROOT, AppConfig, load_config
 from app.db import make_engine, session
-from app.models import STATUSES, Candidate, Job
+from app.models import ACTIVE_STATUSES, STATUSES, Candidate, Job
 from app.templates import ensure_default_templates
 from app.worker import Worker
 
@@ -48,7 +48,7 @@ def import_cli_jobs(engine: Engine, jobs_dir: Path) -> int:
             except (OSError, json.JSONDecodeError):
                 continue
             status = data.get("status", "failed")
-            if status not in STATUSES or status in ("queued", "downloading", "analyzing", "rendering"):
+            if status not in STATUSES or status in ACTIVE_STATUSES:
                 status = "failed" if not cands else "ready_for_review"
             created = data.get("created_at")
             s.add(Job(
@@ -76,7 +76,7 @@ def import_cli_jobs(engine: Engine, jobs_dir: Path) -> int:
 def create_app(
     data_dir: Path | None = None, *, start_worker: bool = True,
     detect_fn: Callable = runner.run_detect, render_fn: Callable = runner.run_render,
-    sse_poll_s: float = 0.5,
+    transcribe_fn: Callable = runner.run_transcribe, sse_poll_s: float = 0.5,
 ) -> FastAPI:
     startup_cfg = load_config(data_dir)
     pinned_dir = startup_cfg.data_dir
@@ -90,7 +90,8 @@ def create_app(
         return replace(load_config(data_dir), data_dir=pinned_dir)
 
     engine = make_engine(startup_cfg.db_path)
-    worker = Worker(engine, config_loader, detect_fn=detect_fn, render_fn=render_fn)
+    worker = Worker(engine, config_loader, detect_fn=detect_fn, render_fn=render_fn,
+                    transcribe_fn=transcribe_fn)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

@@ -20,7 +20,17 @@ const props = defineProps<{ scores: Scores; activeId: number | null; playhead: n
 const emit = defineEmits<{ select: [id: number]; seek: [t: number] }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
+const showReaction = ref(false)
 let chart: Chart | null = null
+
+function toggleReaction() {
+  showReaction.value = !showReaction.value
+  const ds = chart?.data.datasets.find((d) => d.label === 'Tawa/teriak')
+  if (ds) {
+    ds.hidden = !showReaction.value
+    chart?.update('none')
+  }
+}
 
 /** Gambar rentang kandidat (bayangan), nomor rank, dan playhead di belakang/depan garis. */
 const overlay: Plugin<'line'> = {
@@ -81,6 +91,18 @@ function build() {
           fill: true,
           tension: 0,
         },
+        ...(s.has_reaction && s.reaction
+          ? [{
+              label: 'Tawa/teriak',
+              data: s.reaction.map((y, i) => ({ x: i, y })),
+              borderColor: 'rgba(244,114,182,0.55)',
+              borderWidth: 1,
+              pointRadius: 0,
+              fill: false,
+              tension: 0,
+              hidden: !showReaction.value,
+            }]
+          : []),
         {
           label: 'Ambang',
           data: [
@@ -155,7 +177,18 @@ watch(
         <span><span class="mr-1 inline-block h-2 w-3 rounded-sm bg-violet-400/50" />aktif</span>
         <span><span class="mr-1 inline-block h-2 w-3 rounded-sm bg-emerald-400/30" />dipilih</span>
         <span><span class="mr-1 inline-block h-0 w-3 border-t border-dashed border-amber-400" />ambang</span>
-        <span v-if="!scores.has_chat" class="text-zinc-500">tanpa live chat (audio saja)</span>
+        <button
+          v-if="scores.has_reaction"
+          type="button"
+          class="hover:text-zinc-200"
+          :class="showReaction ? 'text-pink-300' : ''"
+          @click="toggleReaction"
+        >
+          <span class="mr-1 inline-block h-0 w-3 border-t border-pink-400" />tawa/teriak {{ showReaction ? '✓' : '' }}
+        </button>
+        <span class="text-zinc-500">
+          sinyal: audio{{ scores.has_chat ? ' + chat' : '' }}{{ scores.has_reaction ? ' + tawa/teriak' : '' }}
+        </span>
       </span>
     </div>
     <div class="h-56">

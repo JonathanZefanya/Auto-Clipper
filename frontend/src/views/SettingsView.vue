@@ -17,11 +17,12 @@ const detectFields: NumField[] = [
   { key: 'max_clip_s', label: 'Durasi klip maksimal (detik)', min: 5, max: 60, step: 1 },
   { key: 'w_audio', label: 'Bobot audio', min: 0, max: 1, step: 0.05 },
   { key: 'w_chat', label: 'Bobot chat', min: 0, max: 1, step: 0.05 },
+  { key: 'w_reaction', label: 'Bobot tawa/teriak', min: 0, max: 1, step: 0.05, hint: 'Sinyal YAMNet (tawa, teriak, sorak).' },
   { key: 'chat_delay_s', label: 'Chat delay (detik)', min: 0, max: 30, step: 1, hint: 'Sinyal chat digeser mundur sebesar ini.' },
 ]
 
 const form = reactive({
-  detect: {} as Record<string, number>,
+  detect: {} as Record<string, number | boolean>,
   render: {} as Record<string, string | number>,
   subtitle: {} as Record<string, string | number | boolean>,
   thumbnail: {} as Record<string, string | number | boolean>,
@@ -53,7 +54,9 @@ async function save() {
   saving.value = true
   try {
     const body: Record<string, unknown> = {
-      detect: pick(form.detect, ['sensitivity', 'download_max_height', ...detectFields.map((f) => f.key)]),
+      detect: pick(form.detect, [
+        'sensitivity', 'download_max_height', 'reaction_enabled', ...detectFields.map((f) => f.key),
+      ]),
       subtitle: pick(form.subtitle, ['enabled', 'model', 'device', 'language']),
       thumbnail: pick(form.thumbnail, ['enabled', 'landscape', 'intro_frame']),
       render: pick(form.render, ['video_encoder', 'default_template']),
@@ -88,6 +91,10 @@ async function save() {
         <input id="sens" v-model.number="form.detect.sensitivity" type="range" min="0" max="1" step="0.05" class="w-full accent-violet-500" />
         <p class="text-xs text-zinc-500">Makin tinggi makin banyak kandidat (ambang z-score lebih rendah).</p>
       </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input v-model="form.detect.reaction_enabled" type="checkbox" class="accent-violet-500" />
+        Deteksi tawa/teriak (YAMNet) sebagai sinyal tambahan
+      </label>
       <div class="grid gap-4 sm:grid-cols-2">
         <div v-for="f in detectFields" :key="f.key">
           <label class="label" :for="f.key">{{ f.label }}</label>

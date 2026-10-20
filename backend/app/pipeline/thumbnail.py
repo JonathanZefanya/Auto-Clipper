@@ -12,7 +12,6 @@ import os
 import re
 import subprocess
 import sys
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -20,6 +19,7 @@ from typing import Any, Sequence
 import numpy as np
 
 from app.config import RenderConfig, ThumbnailConfig
+from app.pipeline.assets import ensure_model
 from app.pipeline.audio import require_ffmpeg
 from app.pipeline.render import build_layout
 from app.pipeline.subtitle import Word
@@ -123,17 +123,7 @@ def pick_best(scores: Sequence[FrameScore]) -> FrameScore:
 # ---------------------------------------------------------------- MediaPipe
 
 def ensure_face_model(models_dir: Path, url: str) -> Path:
-    models_dir.mkdir(parents=True, exist_ok=True)
-    path = models_dir / Path(url.split("?")[0]).name
-    if not path.exists():
-        print(f"  mengunduh model deteksi wajah → {path.name}")
-        tmp = path.with_suffix(".part")
-        try:
-            urllib.request.urlretrieve(url, tmp)
-        except OSError as e:
-            raise RuntimeError(f"Gagal mengunduh model MediaPipe dari {url}: {e}") from e
-        tmp.replace(path)
-    return path
+    return ensure_model(models_dir, url)
 
 
 class FaceDetector:

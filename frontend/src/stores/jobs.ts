@@ -85,6 +85,14 @@ export const useJobsStore = defineStore('jobs', () => {
     subscribe(job.id)
   }
 
+  /** F-16: transkripsi kandidat terpilih tanpa render. */
+  async function transcribe() {
+    if (!current.value) return
+    const job = await api.transcribe(current.value.id)
+    Object.assign(current.value, job)
+    subscribe(job.id)
+  }
+
   async function setTemplate(template: string) {
     if (!current.value) return
     const job = await api.updateJob(current.value.id, { template })
@@ -110,6 +118,7 @@ export const useJobsStore = defineStore('jobs', () => {
 
   return {
     list, current, scores,
-    fetchList, load, subscribe, unsubscribe, patchCandidate, setSelection, render, setTemplate, cancel, remove,
+    fetchList, load, subscribe, unsubscribe, patchCandidate, setSelection, render, transcribe, setTemplate,
+    cancel, remove,
   }
 })

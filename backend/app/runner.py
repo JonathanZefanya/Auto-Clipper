@@ -13,7 +13,7 @@ import numpy as np
 
 from app.config import DetectConfig, RenderConfig, SubtitleConfig, ThumbnailConfig
 from app.jobs import write_json
-from app.pipeline import audio, chat, detect, download
+from app.pipeline import audio, chat, detect, download, subdoc
 from app.pipeline.detect import Candidate
 from app.templates import Template
 
@@ -48,6 +48,7 @@ class DetectOutput:
     candidates: list[Candidate]
     used_fallback: bool
     threshold: float
+    has_reaction: bool = False
 
 
 def load_or_fetch_meta(url: str, job_dir: Path, force: bool = False) -> download.VideoMeta:
@@ -60,9 +61,25 @@ def load_or_fetch_meta(url: str, job_dir: Path, force: bool = False) -> download
     return meta
 
 
+def _open_reaction_scorer(cfg: DetectConfig, models_dir: Path | None, log: Callable[[str], None]):
+    """F-15: siapkan YAMNet; gagal (offline, MediaPipe error) → None, analisis lanjut tanpa sinyal ini."""
+    if not cfg.reaction_enabled or models_dir is None:
+        return None
+    from app.pipeline.assets import ensure_model
+    from app.pipeline.reaction import ReactionScorer
+
+    try:
+        model = ensure_model(models_dir, cfg.reaction_model_url, log=log)
+        return ReactionScorer(model, cfg.reaction_classes, cfg.audio_sample_rate, log=log).__enter__()
+    except Exception as e:
+        log(f"deteksi tawa/teriak tidak tersedia: {e}")
+        return None
+
+
 def run_detect(
     url: str, job_dir: Path, cfg: DetectConfig, report: Reporter = _noop,
-    force_download: bool = False,
+    force_download: bool = False, models_dir: Path | None = None,
+    log: Callable[[str], None] = lambda _m: None,
 ) -> DetectOutput:
     """Unduh (reuse bila ada) → analisis audio & chat → kandidat. Menulis meta/scores/candidates.json.
 
@@ -99,11 +116,24 @@ def run_detect(
 
     # ---- F-03 .. F-05
     report("analyzing", 0, "analisis audio")
-    _, audio_score = audio.analyze_audio(
-        source, cfg, duration_s=meta.duration or None,
-        on_progress=lambda pct: report("analyzing", pct * 0.9, "analisis audio"),
-    )
+    scorer = _open_reaction_scorer(cfg, models_dir, log)
+    label = "analisis audio + tawa/teriak" if scorer else "analisis audio"
+    try:
+        _, audio_score = audio.analyze_audio(
+            source, cfg, duration_s=meta.duration or None,
+            on_progress=lambda pct: report("analyzing", pct * 0.9, label),
+            consumers=[scorer.feed] if scorer else (),
+        )
+    finally:
+        if scorer:
+            scorer.__exit__(None, None, None)
     duration_s = int(audio_score.size)
+
+    reaction_score = None
+    if scorer and scorer.error is None and scorer.windows:
+        from app.pipeline.reaction import reaction_scores
+
+        reaction_score = reaction_scores(scorer.per_second(duration_s), cfg)
 
     chat_score = None
     if chat_path is not None:
@@ -113,11 +143,13 @@ def run_detect(
             chat_score = chat.chat_scores(offsets, duration_s, cfg)
         report("analyzing", 97, f"{offsets.size} pesan chat")
 
-    result = detect.detect(audio_score, chat_score, duration_s, cfg)
+    result = detect.detect(audio_score, chat_score, duration_s, cfg, reaction=reaction_score)
     write_json(job_dir / "scores.json", {
         "fps": 1,
         "duration": duration_s,
         "has_chat": chat_score is not None,
+        "has_reaction": reaction_score is not None,
+        "reaction": _round_list(reaction_score),
         "threshold": round(result.threshold, 4),
         "used_fallback": result.used_fallback,
         "config": cfg.to_dict(),
@@ -128,7 +160,8 @@ def run_detect(
     })
     write_json(job_dir / "candidates.json", [c.to_dict() for c in result.candidates])
     report("analyzing", 100, f"{len(result.candidates)} kandidat ditemukan")
-    return DetectOutput(meta, chat_score is not None, result.candidates, result.used_fallback, result.threshold)
+    return DetectOutput(meta, chat_score is not None, result.candidates, result.used_fallback,
+                        result.threshold, has_reaction=reaction_score is not None)
 
 
 # ================================================================ render
@@ -150,6 +183,7 @@ class ClipResult:
     thumb_landscape_path: str | None = None
     thumb_text: str | None = None
     credit_path: str | None = None
+    subs_path: str | None = None
     encoder: str | None = None
     has_face: bool | None = None
 
@@ -201,6 +235,39 @@ class _Progress:
         self.done += self.weights[phase]
 
 
+def _transcribe_clip(tr: Any, source: Path, c: ClipSpec, scfg: SubtitleConfig) -> tuple[list, list]:
+    from app.pipeline import subtitle
+
+    dur = c.end - c.start
+    pcm = subtitle.extract_audio_segment(source, c.start, dur, scfg.sample_rate)
+    words = subtitle.clamp_words(tr.transcribe(pcm), dur)
+    return words, subtitle.group_words(words, scfg)
+
+
+def run_transcribe(
+    source: Path, job_dir: Path, clips: list[ClipSpec], scfg: SubtitleConfig,
+    report: Reporter = _noop, log: Callable[[str], None] = lambda _m: None,
+) -> dict[int, str]:
+    """F-16: transkripsi klip (tanpa render) → dokumen subtitle yang bisa diedit. Hasil: rank → subs_path."""
+    from app.pipeline import subtitle
+
+    audio.require_ffmpeg()
+    if not clips:
+        raise ValueError("Tidak ada klip yang dipilih")
+    out: dict[int, str] = {}
+    report("transcribing", 0, "memuat model Whisper")
+    with subtitle.Transcriber(scfg, log=log) as tr:
+        for i, c in enumerate(clips):
+            report("transcribing", 100 * i / len(clips), f"transkripsi klip #{c.rank} ({tr.device})")
+            words, lines = _transcribe_clip(tr, source, c, scfg)
+            path = subdoc.save_doc(job_dir, c.rank, subdoc.SubDoc(c.start, c.end, lines))
+            out[c.rank] = rel_path(path, job_dir)
+            log(f"#{c.rank}: {len(words)} kata → {len(lines)} baris ({tr.device})")
+    log("model Whisper di-unload")
+    report("transcribing", 100, "transkripsi selesai")
+    return out
+
+
 def run_render(
     source: Path, job_dir: Path, clips: list[ClipSpec], template: Template,
     rcfg: RenderConfig, scfg: SubtitleConfig, tcfg: ThumbnailConfig, models_dir: Path,
@@ -224,7 +291,12 @@ def run_render(
 
     do_subs = options.subtitle and not options.only_thumbs
     need_text = {c.rank for c in clips if options.thumbnail and not c.thumb_text}
-    to_transcribe = [c for c in clips if do_subs or c.rank in need_text]
+    # F-16: dokumen subtitle (hasil edit / transkripsi sebelumnya) dipakai apa adanya → Whisper dilewati.
+    docs = {c.rank: subdoc.load_doc(job_dir, c.rank) for c in clips}
+    to_transcribe = [
+        c for c in clips
+        if docs[c.rank] is None and (do_subs or c.rank in need_text)
+    ]
     do_render = not options.only_thumbs
 
     weights = {
@@ -234,30 +306,38 @@ def run_render(
     }
     prog = _Progress(report, total=sum(weights.values()) or 1.0, weights=weights)
 
-    # ---- F-10
-    ass_paths: dict[int, Path] = {}
+    # ---- F-10 / F-16
+    lines_by_rank: dict[int, list] = {}
     words_by_rank: dict[int, list] = {}
+    for c in clips:
+        doc = docs[c.rank]
+        if doc is not None:
+            lines_by_rank[c.rank] = subdoc.shift_lines(doc, c.start, c.end)
+            words_by_rank[c.rank] = subdoc.lines_to_words(lines_by_rank[c.rank])
     if to_transcribe:
         prog.step("transcribe", 0, "memuat model Whisper")
         with subtitle.Transcriber(scfg, log=log) as tr:
             for i, c in enumerate(to_transcribe):
                 prog.step("transcribe", i / len(to_transcribe), f"transkripsi klip #{c.rank} ({tr.device})")
-                dur = c.end - c.start
-                pcm = subtitle.extract_audio_segment(source, c.start, dur, scfg.sample_rate)
-                words = subtitle.clamp_words(tr.transcribe(pcm), dur)
-                words_by_rank[c.rank] = words
-                if do_subs:
-                    lines = subtitle.group_words(words, scfg)
-                    ass = clips_dir / f"clip_{c.rank:02d}.ass"
-                    ass.write_text(
-                        subtitle.build_ass(lines, scfg, rcfg.width, rcfg.height,
-                                           layout.gameplay_top, layout.gameplay_height),
-                        encoding="utf-8",
-                    )
-                    ass_paths[c.rank] = ass
+                words, lines = _transcribe_clip(tr, source, c, scfg)
+                words_by_rank[c.rank], lines_by_rank[c.rank] = words, lines
+                # simpan agar bisa diedit lalu dirender ulang tanpa Whisper
+                path = subdoc.save_doc(job_dir, c.rank, subdoc.SubDoc(c.start, c.end, lines))
+                results[c.rank].subs_path = rel_path(path, job_dir)
                 log(f"#{c.rank}: {len(words)} kata ({tr.device})")
         log("model Whisper di-unload")
     prog.finish("transcribe")
+
+    ass_paths: dict[int, Path] = {}
+    if do_subs:
+        for c in clips:
+            ass = clips_dir / f"clip_{c.rank:02d}.ass"
+            ass.write_text(
+                subtitle.build_ass(lines_by_rank.get(c.rank, []), scfg, rcfg.width, rcfg.height,
+                                   layout.gameplay_top, layout.gameplay_height),
+                encoding="utf-8",
+            )
+            ass_paths[c.rank] = ass
 
     # ---- F-11
     thumb_paths: dict[int, Path] = {}

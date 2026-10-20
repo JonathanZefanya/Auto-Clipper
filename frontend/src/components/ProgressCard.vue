@@ -13,6 +13,7 @@ const steps = [
   { key: 'downloading', label: 'Unduh' },
   { key: 'analyzing', label: 'Analisis' },
   { key: 'ready_for_review', label: 'Review' },
+  { key: 'transcribing', label: 'Transkripsi' },
   { key: 'rendering', label: 'Render' },
   { key: 'done', label: 'Selesai' },
 ] as const

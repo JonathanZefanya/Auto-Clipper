@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ACTIVE_STATUSES, api, errorMessage, type RenderOptions } from '@/api'
 import CandidateList from '@/components/CandidateList.vue'
@@ -9,6 +9,7 @@ import RenderPanel from '@/components/RenderPanel.vue'
 import ResultsGallery from '@/components/ResultsGallery.vue'
 import ScoreChart from '@/components/ScoreChart.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import SubtitleEditor from '@/components/SubtitleEditor.vue'
 import { fmtDate, fmtTime } from '@/format'
 import { useAppStore } from '@/stores/app'
 import { useJobsStore } from '@/stores/jobs'
@@ -84,6 +85,14 @@ const onTrim = (id: number, r: { start: number; end: number }) => run(() => jobs
 const onTemplate = (name: string) => run(() => jobs.setTemplate(name))
 const onSaveText = (id: number, text: string) => run(() => jobs.patchCandidate(id, { thumb_text: text }), 'Teks thumbnail disimpan')
 
+// reset dulu agar klik ke waktu yang sama tetap memicu seek
+function seek(t: number) {
+  seekTo.value = null
+  void nextTick(() => (seekTo.value = t))
+}
+
+const onTranscribe = () => run(() => jobs.transcribe(), 'Transkripsi masuk antrean')
+
 function onRender(opts: RenderOptions) {
   void run(() => jobs.render({ ...opts, template: job.value?.template }), 'Render masuk antrean')
 }
@@ -103,7 +112,7 @@ async function openFolder() {
 const cancelling = ref(false)
 async function cancel() {
   if (!job.value) return
-  const what = job.value.task === 'render' ? 'render' : 'unduh & analisis'
+  const what = { render: 'render', transcribe: 'transkripsi', detect: 'unduh & analisis' }[job.value.task]
   if (!confirm(`Batalkan ${what} job ini?`)) return
   cancelling.value = true
   try {
@@ -159,7 +168,7 @@ async function remove() {
         :active-id="activeId"
         :playhead="playhead"
         @select="activeId = $event"
-        @seek="seekTo = $event"
+        @seek="seek"
       />
 
       <div class="grid gap-5 lg:grid-cols-5">
@@ -187,6 +196,15 @@ async function remove() {
             :end="active?.end ?? null"
             :seek-to="seekTo"
             @time="playhead = $event"
+          />
+          <SubtitleEditor
+            v-if="active"
+            :candidate="active"
+            :locked="locked"
+            :selected-count="job.selected_count"
+            @seek="seek"
+            @transcribe="onTranscribe"
+            @changed="(has) => active && (active.subs_path = has ? `subs/clip_${String(active.rank).padStart(2, '0')}.json` : null)"
           />
           <RenderPanel
             :templates="app.templates"

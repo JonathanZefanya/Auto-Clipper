@@ -65,6 +65,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
         chat_delay_s=args.chat_delay,
         w_audio=args.w_audio,
         w_chat=args.w_chat,
+        w_reaction=args.w_reaction,
+        reaction_enabled=False if args.no_reaction else None,
     )
     job = create_job(app_cfg.jobs_dir, args.job_id or video_id, args.url)
     print(f"Job: {job.id}  ({job.dir})")
@@ -77,7 +79,9 @@ def cmd_detect(args: argparse.Namespace) -> int:
         reporter(status, progress, message)
 
     try:
-        out = run_detect(args.url, job.dir, cfg, report, force_download=args.force_download)
+        out = run_detect(args.url, job.dir, cfg, report, force_download=args.force_download,
+                         models_dir=app_cfg.models_dir,
+                         log=lambda m: (reporter.close(), print(f"  {m}")))
     except (download.DownloadError, RuntimeError, ValueError) as e:
         reporter.close()
         job.set_status("failed", str(e))
@@ -90,7 +94,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
     job.set_status("ready_for_review")
 
     print(f"\nJudul   : {out.meta.title}\nChannel : {out.meta.channel}\nDurasi  : {fmt_time(out.meta.duration)}")
-    print(f"Live chat: {'ada' if out.has_chat else 'tidak ada (pakai audio saja)'}\n")
+    print(f"Live chat: {'ada' if out.has_chat else 'tidak ada (pakai audio saja)'}")
+    print(f"Tawa/teriak (YAMNet): {'dipakai' if out.has_reaction else 'tidak dipakai'}\n")
     if out.used_fallback:
         print("Tidak ada puncak yang melewati ambang; mengambil 1 puncak tertinggi.")
     print(f"{len(out.candidates)} kandidat (sensitivity={cfg.sensitivity}, ambang z={cfg.threshold_z:.2f}):\n")
@@ -184,7 +189,7 @@ def cmd_render(args: argparse.Namespace) -> int:
 
     for r in results:
         c = by_rank[r.rank]
-        for key in ("clip_path", "thumb_path", "thumb_landscape_path", "thumb_text"):
+        for key in ("clip_path", "thumb_path", "thumb_landscape_path", "thumb_text", "subs_path"):
             value = getattr(r, key)
             if value is not None:
                 c[key] = value
@@ -238,6 +243,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--chat-delay", type=int, help="Geser mundur sinyal chat (detik)")
     p.add_argument("--w-audio", type=float, help="Bobot skor audio")
     p.add_argument("--w-chat", type=float, help="Bobot skor chat")
+    p.add_argument("--w-reaction", type=float, help="Bobot skor tawa/teriak (YAMNet)")
+    p.add_argument("--no-reaction", action="store_true", help="Matikan deteksi tawa/teriak")
     p.add_argument("--job-id", help="ID job (default: video id)")
     p.add_argument("--data-dir", help="Folder data (default: <repo>/data)")
     p.add_argument("--force-download", action="store_true", help="Unduh ulang walau file sudah ada")

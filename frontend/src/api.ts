@@ -5,11 +5,12 @@ export type JobStatus =
   | 'downloading'
   | 'analyzing'
   | 'ready_for_review'
+  | 'transcribing'
   | 'rendering'
   | 'done'
   | 'failed'
 
-export const ACTIVE_STATUSES: JobStatus[] = ['queued', 'downloading', 'analyzing', 'rendering']
+export const ACTIVE_STATUSES: JobStatus[] = ['queued', 'downloading', 'analyzing', 'transcribing', 'rendering']
 
 export interface Job {
   id: string
@@ -25,7 +26,7 @@ export interface Job {
   progress: number
   message: string | null
   error: string | null
-  task: 'detect' | 'render'
+  task: 'detect' | 'transcribe' | 'render'
   created_at: string
   updated_at: string
   queue_position: number | null
@@ -49,6 +50,7 @@ export interface Candidate {
   thumb_landscape_path: string | null
   thumb_text: string | null
   credit_path: string | null
+  subs_path: string | null
   clip_url: string | null
   thumb_url: string | null
   thumb_landscape_url: string | null
@@ -81,11 +83,13 @@ export interface Preview {
 export interface Scores {
   duration: number
   has_chat: boolean
+  has_reaction: boolean
   threshold: number
   used_fallback: boolean
   smoothed: number[]
   audio: number[] | null
   chat: number[] | null
+  reaction: number[] | null
   candidates: Pick<Candidate, 'id' | 'rank' | 'peak_time' | 'start' | 'end' | 'score' | 'selected'>[]
 }
 
@@ -105,12 +109,37 @@ export interface Template {
   builtin?: boolean
 }
 
+export interface SubLine {
+  start: number
+  end: number
+  text: string
+}
+
+export interface Subtitles {
+  candidate_id: number
+  duration: number
+  edited: boolean
+  stale: boolean
+  clip_start: number
+  clip_end: number
+  lines: SubLine[]
+}
+
+export interface FacecamResult {
+  facecam_box: Box
+  face_box: Box
+  hits: number
+  frames: number
+  confidence: number
+  time: number
+}
+
 export interface Settings {
   data_dir: string
   data_dir_configured: string
   restart_required: boolean
   config_file: string
-  detect: Record<string, number>
+  detect: Record<string, number | boolean>
   render: Record<string, string | number>
   subtitle: Record<string, string | number | boolean>
   thumbnail: Record<string, string | number | boolean>
@@ -178,6 +207,13 @@ export const api = {
   render: (id: string, body: Partial<RenderOptions> & { template?: string }) =>
     request<Job>('POST', `/api/jobs/${id}/render`, body),
   cancelJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/cancel`),
+  transcribe: (id: string) => request<Job>('POST', `/api/jobs/${id}/transcribe`),
+  getSubtitles: (candidateId: number) => request<Subtitles>('GET', `/api/candidates/${candidateId}/subtitles`),
+  saveSubtitles: (candidateId: number, lines: SubLine[]) =>
+    request<Subtitles>('PUT', `/api/candidates/${candidateId}/subtitles`, { lines }),
+  resetSubtitles: (candidateId: number) => request<void>('DELETE', `/api/candidates/${candidateId}/subtitles`),
+  detectFacecam: (id: string, top_ratio: number) =>
+    request<FacecamResult>('POST', `/api/jobs/${id}/detect-facecam`, { top_ratio }),
   openFolder: (id: string) => request<{ path: string; opened: boolean }>('POST', `/api/jobs/${id}/open-folder`),
   templates: () => request<Template[]>('GET', '/api/templates'),
   saveTemplate: (t: Template) => request<Template>('POST', '/api/templates', t),

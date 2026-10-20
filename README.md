@@ -18,11 +18,11 @@ Semua proses berjalan di PC sendiri: tanpa API berbayar, tanpa upload otomatis. 
 |---|---|
 | Input link | `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/live/` + preview judul, channel, durasi |
 | Unduh | Video maks 1080p + live chat replay (jika ada) via yt-dlp |
-| Deteksi momen | Skor per detik dari audio + chat, jumlah klip fleksibel (bisa 1, bisa banyak) |
+| Deteksi momen | Skor per detik dari audio + chat + **tawa/teriak (YAMNet)**, jumlah klip fleksibel (bisa 1, bisa banyak) |
 | Review | Grafik skor, daftar kandidat, preview video per rentang, trim awal/akhir ±1/±5 dtk |
-| Template 9:16 | **Split** (facecam atas + gameplay bawah) atau **center crop**, editor kotak facecam di UI |
+| Template 9:16 | **Split** (facecam atas + gameplay bawah) atau **center crop**, editor kotak facecam di UI + **deteksi facecam otomatis** |
 | Render | FFmpeg `h264_nvenc` (fallback `libx264`), 1080×1920, maks 60 detik |
-| Subtitle | faster-whisper Bahasa Indonesia, hanya pada klip terpilih, 2–4 kata per baris gaya Shorts |
+| Subtitle | faster-whisper Bahasa Indonesia, hanya pada klip terpilih, 2–4 kata per baris gaya Shorts; **bisa diedit sebelum render** |
 | Thumbnail | Frame dengan wajah paling jelas (MediaPipe) + teks besar ber-outline; 1080×1920 dan opsional 1280×720; bisa disisipkan sebagai frame pembuka |
 | Hasil | Galeri, unduh per file atau ZIP, file kredit `clip_<nn>.txt` (judul, channel, link + timestamp) |
 | Job | Progres real-time (SSE), satu antrean, **batalkan** job yang antre/berjalan, riwayat tersimpan di SQLite, lanjut otomatis setelah restart |
@@ -33,10 +33,11 @@ Semua proses berjalan di PC sendiri: tanpa API berbayar, tanpa upload otomatis. 
 1. Audio diekstrak mono 16 kHz dan dibaca **per chunk 60 detik** (hemat RAM).
 2. RMS per detik (dB) dibandingkan dengan **baseline median bergerak 60 detik** → yang terdeteksi lonjakan, bukan sekadar suara keras konstan (`audio_z`).
 3. Jika ada live chat: jumlah pesan per detik (window 10 detik), dinormalisasi dengan cara yang sama, lalu digeser mundur `chat_delay` (default 7 detik) (`chat_z`).
-4. Skor = `w_audio · audio_z + w_chat · chat_z` (default 0.5 / 0.5; tanpa chat → audio saja).
-5. Smoothing → peak picking dengan ambang sensitivitas dan jarak minimal antar puncak (default 60 detik).
-6. Tiap puncak → klip dari 20 detik sebelum sampai 15 detik sesudah puncak, maks 60 detik; klip yang overlap digabung.
-7. Diurutkan dan diskalakan 0–100. Jika tidak ada yang melewati ambang, diambil 1 puncak tertinggi.
+4. Reaksi vokal: YAMNet mengklasifikasi audio yang sama (tawa, teriak, sorak, …) → probabilitas per detik, dinormalisasi sebagai lonjakan (`reaction_z`).
+5. Skor = `w_audio · audio_z + w_chat · chat_z + w_reaction · reaction_z` (default 0.5 / 0.5 / 0.5; bobot dinormalisasi atas sinyal yang tersedia — tanpa chat, sinyal chat dilewati).
+6. Smoothing → peak picking dengan ambang sensitivitas dan jarak minimal antar puncak (default 60 detik).
+7. Tiap puncak → klip dari 20 detik sebelum sampai 15 detik sesudah puncak, maks 60 detik; klip yang overlap digabung.
+8. Diurutkan dan diskalakan 0–100. Jika tidak ada yang melewati ambang, diambil 1 puncak tertinggi.
 
 Semua angka di atas bisa diubah di halaman **Pengaturan** atau `data/config.json`.
 
@@ -99,8 +100,9 @@ npm run dev        # http://localhost:5173, /api di-proxy ke :8000
 1. **Proses baru** → tempel link → **Cek link** → pilih template → **Proses**.
 2. Tunggu unduh + analisis (progres tampil real-time).
 3. **Review**: klik kandidat di daftar atau grafik untuk preview, geser awal/akhir bila perlu, centang yang mau dibuat.
-4. Atur opsi (subtitle, thumbnail, thumbnail 16:9, frame pembuka) → **Render**.
-5. Di **Hasil**: preview klip, edit teks thumbnail, unduh per file atau **ZIP**, atau **Buka folder output**.
+4. *(Opsional)* **Transkripsi klip terpilih** → edit teks/waktu subtitle di panel **Subtitle** (klik waktu untuk memutar dari titik itu) → **Simpan**.
+5. Atur opsi (subtitle, thumbnail, thumbnail 16:9, frame pembuka) → **Render**. Subtitle hasil edit dipakai apa adanya.
+6. Di **Hasil**: preview klip, edit teks thumbnail, unduh per file atau **ZIP**, atau **Buka folder output**.
 
 ### CLI
 
@@ -169,7 +171,8 @@ data/
    ├─ scores.json             # skor per detik (grafik)
    ├─ candidates.json
    ├─ clips/clip_01.mp4       # klip 1080×1920
-   ├─ clips/clip_01.ass       # subtitle
+   ├─ clips/clip_01.ass       # subtitle (ASS)
+   ├─ subs/clip_01.json       # subtitle yang bisa diedit (sumber .ass)
    ├─ clips/clip_01.txt       # kredit: judul, channel, link + timestamp
    ├─ thumbs/clip_01.png      # thumbnail 1080×1920
    ├─ thumbs/clip_01_16x9.png # opsional 1280×720
@@ -207,7 +210,7 @@ cd backend;  pytest -q                 # test backend
 cd frontend; npm run typecheck         # typecheck frontend
 ```
 
-Konvensi kode dan aturan kerja per milestone ada di [CLAUDE.md](CLAUDE.md); spesifikasi produk di [PRD.md](PRD.md) dan [Feature.md](Feature.md).
+Spesifikasi produk di [PRD.md](PRD.md) dan [Feature.md](Feature.md).
 
 ## Troubleshooting
 
@@ -223,4 +226,4 @@ Konvensi kode dan aturan kerja per milestone ada di [CLAUDE.md](CLAUDE.md); spes
 
 ## Rencana berikutnya
 
-Deteksi tawa/teriak dengan model audio (YAMNet/PANNs), saran judul dengan LLM lokal, edit teks subtitle sebelum render, auto-deteksi posisi facecam, aplikasi desktop (Tauri), dukungan Twitch VOD. Lihat bagian "Later" di [Feature.md](Feature.md).
+Saran judul dengan LLM lokal (Ollama), aplikasi desktop (Tauri), dukungan Twitch VOD. Lihat bagian "Later" di [Feature.md](Feature.md).

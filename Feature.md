@@ -24,6 +24,9 @@ Daftar fitur beserta kriteria penerimaan. Konteks produk ada di `PRD.md`.
 | F-12 | Unduh hasil & folder output | P0 | M4 |
 | F-13 | Progres job real-time & riwayat | P0 | M4 |
 | F-14 | Pengaturan | P1 | M4 |
+| F-15 | Deteksi tawa/teriak (YAMNet) | P1 | M5 |
+| F-16 | Edit subtitle sebelum render | P1 | M5 |
+| F-17 | Auto-deteksi posisi facecam | P1 | M5 |
 
 ---
 
@@ -157,6 +160,35 @@ Output 1080×1920.
 - Lokasi folder data.
 - Disimpan di `config.json`.
 
+## F-15 — Deteksi Tawa/Teriak (YAMNet)
+
+Sinyal tambahan untuk skor momen: reaksi vokal yang khas momen seru.
+
+**Kriteria penerimaan**
+- Klasifikasi audio dengan YAMNet (MediaPipe AudioClassifier, CPU) pada aliran chunk yang sama dengan analisis RMS (tanpa decode ulang).
+- Kelas reaksi (dapat diatur): tawa, teriak, sorak, dll.; skor per detik = probabilitas tertinggi kelas reaksi.
+- Dinormalisasi sebagai lonjakan relatif (baseline median 60 detik) → `reaction_z`.
+- Skor gabungan: `w_audio · audio_z + w_chat · chat_z + w_reaction · reaction_z` (bobot dinormalisasi; sinyal yang tidak tersedia dilewati).
+- Bisa dimatikan dan bobotnya diatur di Pengaturan; jika model gagal dimuat, analisis tetap jalan tanpa sinyal ini.
+- Disimpan di `scores.json` dan ditampilkan di grafik.
+
+## F-16 — Edit Subtitle Sebelum Render
+
+**Kriteria penerimaan**
+- Tombol **Transkripsi** menjalankan faster-whisper untuk kandidat terpilih tanpa merender video.
+- Editor per klip: daftar baris (waktu mulai/selesai + teks), bisa diubah, dihapus, ditambah; klik waktu → preview melompat ke titik itu.
+- Hasil editan disimpan dan dipakai saat render (Whisper tidak dijalankan ulang untuk klip tersebut).
+- Jika rentang klip di-trim setelah transkripsi, waktu baris disesuaikan otomatis dan UI memberi tanda bahwa transkripsi ulang mungkin diperlukan.
+- **Reset** mengembalikan ke subtitle otomatis.
+
+## F-17 — Auto-deteksi Posisi Facecam
+
+**Kriteria penerimaan**
+- Di editor template, tombol **Deteksi otomatis** menganalisis beberapa frame dari video sumber.
+- Wajah dideteksi per frame (MediaPipe, dengan tiling agar wajah kecil di overlay facecam terdeteksi), lalu dikelompokkan; facecam = kelompok wajah yang posisinya stabil di banyak frame.
+- Kotak facecam diperluas dari kotak wajah dan disesuaikan dengan rasio area atas layout split.
+- Jika tidak ada wajah yang stabil, tampilkan pesan yang jelas (kotak bisa digambar manual).
+
 ---
 
 ## Rancangan API (Backend FastAPI)
@@ -176,6 +208,9 @@ Output 1080×1920.
 | `DELETE` | `/api/jobs/{id}` | Hapus job dan file |
 | `GET/POST` | `/api/templates` | Kelola template layout |
 | `GET/PUT` | `/api/settings` | Pengaturan |
+| `POST` | `/api/jobs/{id}/transcribe` | Transkripsi kandidat terpilih (F-16) |
+| `GET/PUT/DELETE` | `/api/candidates/{id}/subtitles` | Baca / simpan / reset subtitle (F-16) |
+| `POST` | `/api/jobs/{id}/detect-facecam` | Saran kotak facecam (F-17) |
 
 ## Model Data (SQLite)
 
@@ -214,9 +249,9 @@ auto-clipper/
 
 ## Later (setelah MVP)
 
-- Deteksi tawa/teriak dengan model audio (YAMNet / PANNs) sebagai sinyal tambahan.
+- ~~Deteksi tawa/teriak (YAMNet)~~ → F-15 (M5).
 - Saran judul klip dengan LLM lokal (Ollama).
-- Edit teks subtitle sebelum render.
-- Auto-deteksi posisi facecam.
+- ~~Edit teks subtitle sebelum render~~ → F-16 (M5).
+- ~~Auto-deteksi posisi facecam~~ → F-17 (M5).
 - Pembungkus aplikasi desktop (Tauri).
 - Dukungan sumber Twitch VOD.

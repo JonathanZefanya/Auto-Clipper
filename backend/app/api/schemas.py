@@ -49,6 +49,7 @@ class CandidateOut(BaseModel):
     thumb_landscape_path: Optional[str]
     thumb_text: Optional[str]
     credit_path: Optional[str]
+    subs_path: Optional[str] = None
     clip_url: Optional[str]
     thumb_url: Optional[str]
     thumb_landscape_url: Optional[str]
@@ -123,6 +124,21 @@ class RenderIn(BaseModel):
     landscape: Optional[bool] = None
     intro_frame: Optional[bool] = None
     only_thumbs: bool = False
+
+
+class SubLineIn(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+class SubtitlesIn(BaseModel):
+    lines: list[SubLineIn]
+
+
+class FacecamIn(BaseModel):
+    top_ratio: float = Field(0.4, ge=0.1, le=0.9)
+    frames: Optional[int] = Field(None, ge=2, le=40)
 
 
 class BoxIn(BaseModel):

@@ -4,7 +4,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Callable, Iterable, Iterator
+from typing import Callable, Iterable, Iterator, Sequence
 
 import numpy as np
 
@@ -91,13 +91,19 @@ def audio_scores(rms: np.ndarray, cfg: DetectConfig) -> np.ndarray:
 def analyze_audio(
     source: Path, cfg: DetectConfig,
     duration_s: float | None = None, on_progress: Callable[[float], None] | None = None,
+    consumers: Sequence[Callable[[np.ndarray], None]] = (),
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Kembalikan (rms_per_detik, audio_z). on_progress(%) dipanggil per chunk bila durasi diketahui."""
+    """Kembalikan (rms_per_detik, audio_z). on_progress(%) dipanggil per chunk bila durasi diketahui.
+
+    `consumers` menerima setiap chunk yang sama (mis. YAMNet F-15) → audio hanya di-decode sekali.
+    """
     chunks = iter_pcm_chunks(source, cfg.audio_sample_rate, cfg.audio_chunk_s)
 
     def tracked() -> Iterator[np.ndarray]:
         done = 0
         for chunk in chunks:
+            for consume in consumers:
+                consume(chunk)
             done += chunk.size
             if on_progress and duration_s:
                 on_progress(min(100.0, 100.0 * done / cfg.audio_sample_rate / duration_s))

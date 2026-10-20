@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import event
+from sqlalchemy import event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -25,7 +25,28 @@ def make_engine(db_path: Path) -> Engine:
         cur.close()
 
     SQLModel.metadata.create_all(engine)
+    migrate(engine)
     return engine
+
+
+def migrate(engine: Engine) -> list[str]:
+    """Migrasi ringan: tambahkan kolom nullable baru ke tabel lama (create_all tidak mengubah tabel)."""
+    added: list[str] = []
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in existing:
+                    continue
+                if not col.nullable:
+                    raise RuntimeError(f"Kolom wajib baru {table.name}.{col.name} butuh migrasi manual")
+                ddl = col.type.compile(engine.dialect)
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
+                added.append(f"{table.name}.{col.name}")
+    return added
 
 
 def session(engine: Engine) -> Session:

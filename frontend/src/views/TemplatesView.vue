@@ -109,6 +109,25 @@ function coverStyle(b: Box | null, tw: number, th: number) {
 }
 const topH = computed(() => Math.round(PH * edit.top_ratio))
 
+// ---------- F-17: auto-deteksi facecam
+const detecting = ref(false)
+async function autoDetect() {
+  if (!jobId.value) return
+  detecting.value = true
+  try {
+    const r = await api.detectFacecam(jobId.value, edit.top_ratio)
+    edit.layout_type = 'split'
+    edit.facecam_box = r.facecam_box
+    mode.value = 'facecam'
+    t.value = Math.round(r.time)
+    app.notify(`Facecam terdeteksi di ${r.hits}/${r.frames} frame — periksa & sesuaikan bila perlu`, 'success', 6000)
+  } catch (e) {
+    app.notify(errorMessage(e), 'error', 8000)
+  } finally {
+    detecting.value = false
+  }
+}
+
 async function save() {
   saving.value = true
   try {
@@ -190,7 +209,16 @@ async function remove(name: string) {
             <label class="label" for="ts">Waktu · {{ fmtTime(t) }}</label>
             <input id="ts" v-model.number="t" type="range" min="0" :max="Math.max(1, (currentJob?.duration ?? 600) - 1)" step="1" class="w-full accent-violet-500" />
           </div>
-          <div class="flex gap-1">
+          <div class="flex flex-wrap gap-1">
+            <button
+              type="button"
+              class="btn btn-ghost"
+              :disabled="!jobId || detecting"
+              title="Cari facecam dari beberapa frame video (MediaPipe)"
+              @click="autoDetect"
+            >
+              {{ detecting ? 'Mendeteksi…' : '✨ Deteksi facecam' }}
+            </button>
             <button
               v-if="edit.layout_type === 'split'"
               type="button"

@@ -20,7 +20,7 @@ from sqlmodel import select
 
 from app.api import deps
 from app.api.schemas import (
-    CandidateOut, JobCreate, JobDetail, JobOut, PreviewIn, PreviewOut, RenderIn, SelectionIn,
+    CandidateOut, FacecamIn, JobCreate, JobDetail, JobOut, PreviewIn, PreviewOut, RenderIn, SelectionIn,
 )
 from app.config import AppConfig
 from app.db import session
@@ -215,11 +215,13 @@ def job_scores(
     return {
         "duration": data.get("duration"),
         "has_chat": data.get("has_chat"),
+        "has_reaction": bool(data.get("has_reaction")),
         "threshold": data.get("threshold"),
         "used_fallback": data.get("used_fallback"),
         "smoothed": data.get("smoothed"),
         "audio": data.get("audio"),
         "chat": data.get("chat"),
+        "reaction": data.get("reaction"),
         "candidates": [
             {"id": c.id, "rank": c.rank, "peak_time": c.peak_time, "start": c.start, "end": c.end,
              "score": c.score, "selected": c.selected}
@@ -252,6 +254,43 @@ def job_frame(
     if proc.returncode != 0 or not proc.stdout:
         raise HTTPException(500, f"Gagal mengambil frame: {proc.stderr.decode(errors='replace').strip()}")
     return Response(proc.stdout, media_type="image/jpeg")
+
+
+@router.post("/{job_id}/detect-facecam")
+def detect_facecam(
+    job_id: str, body: FacecamIn,
+    engine: Engine = Depends(deps.engine), cfg: AppConfig = Depends(deps.config),
+) -> dict:
+    """F-17: saran kotak facecam dari beberapa frame sumber (MediaPipe, CPU, ±beberapa detik)."""
+    from app.pipeline import facecam, thumbnail
+
+    with session(engine) as s:
+        job = deps.get_job_or_404(s, job_id)
+        duration = job.duration
+    source = _job_dir(cfg, job_id) / "source.mp4"
+    if not source.exists():
+        raise HTTPException(404, "source.mp4 belum ada")
+    fc = cfg.facecam if body.frames is None else cfg.facecam.with_overrides(frames=body.frames)
+    try:
+        model = thumbnail.ensure_face_model(cfg.models_dir, cfg.thumbnail.face_model_url)
+        with thumbnail.FaceDetector(model, fc.min_confidence) as detector:
+            res = facecam.detect_facecam(source, duration, body.top_ratio, cfg.render, fc, detector)
+    except ImportError as e:
+        raise HTTPException(500, f"MediaPipe belum terpasang ({e})") from e
+    except RuntimeError as e:
+        raise HTTPException(500, str(e)) from e
+    if res is None:
+        raise HTTPException(
+            422, "Facecam tidak terdeteksi: tidak ada wajah yang posisinya stabil di frame sampel. "
+                 "Gambar kotak facecam secara manual.")
+    return {
+        "facecam_box": asdict(res.box),
+        "face_box": {"x": res.face.x, "y": res.face.y, "w": res.face.w, "h": res.face.h},
+        "hits": res.hits,
+        "frames": res.frames,
+        "confidence": res.confidence,
+        "time": res.best_time,
+    }
 
 
 @router.get("/{job_id}/files/{kind}/{name}")
@@ -311,6 +350,34 @@ def render_job(
         s.commit()
         out = _job_out(job, cands, w)
     w.enqueue(job_id, "render")
+    out.queue_position = w.queue_position(job_id)
+    return out
+
+
+@router.post("/{job_id}/transcribe", response_model=JobOut, status_code=202)
+def transcribe_job(
+    job_id: str, engine: Engine = Depends(deps.engine), w: Worker = Depends(deps.worker),
+    cfg: AppConfig = Depends(deps.config),
+) -> JobOut:
+    """F-16: transkripsi kandidat terpilih tanpa render → subtitle bisa diedit sebelum render."""
+    if w.is_busy(job_id):
+        raise HTTPException(409, "Job sedang diproses / di antrean")
+    with session(engine) as s:
+        job = deps.get_job_or_404(s, job_id)
+        cands = deps.job_candidates(s, job_id)
+        if job.status in ACTIVE_STATUSES:
+            raise HTTPException(409, f"Job masih {job.status}")
+        if not any(c.selected for c in cands):
+            raise HTTPException(400, "Pilih minimal 1 kandidat untuk ditranskripsi")
+        if not (_job_dir(cfg, job_id) / "source.mp4").exists():
+            raise HTTPException(400, "source.mp4 tidak ada")
+        job.task, job.status, job.progress, job.error = "transcribe", "queued", 0.0, None
+        job.message = "menunggu antrean transkripsi"
+        job.updated_at = utcnow()
+        s.add(job)
+        s.commit()
+        out = _job_out(job, cands, w)
+    w.enqueue(job_id, "transcribe")
     out.queue_position = w.queue_position(job_id)
     return out
 
