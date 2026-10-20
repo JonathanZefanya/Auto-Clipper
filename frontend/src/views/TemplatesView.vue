@@ -44,7 +44,8 @@ watch(jobId, () => {
 })
 
 function load(tpl: Template) {
-  Object.assign(edit, structuredClone({ ...tpl }))
+  // tpl berasal dari store Pinia (Proxy reaktif) → structuredClone gagal; template hanya data JSON
+  Object.assign(edit, JSON.parse(JSON.stringify(tpl)) as Template)
   delete (edit as Partial<Template>).builtin
   mode.value = edit.layout_type === 'split' ? 'facecam' : 'gameplay'
 }
