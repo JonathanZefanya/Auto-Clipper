@@ -1,0 +1,293 @@
+"""Semua parameter aplikasi. Default di sini, bisa ditimpa via data/config.json lalu flag CLI."""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict, dataclass, field, fields, replace
+from pathlib import Path
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DATA_DIR = REPO_ROOT / "data"
+
+
+class _Overridable:
+    def with_overrides(self, **overrides: Any):
+        known = {f.name for f in fields(self)}  # type: ignore[arg-type]
+        return replace(self, **{k: v for k, v in overrides.items() if k in known and v is not None})  # type: ignore[type-var]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)  # type: ignore[call-overload]
+
+
+@dataclass(frozen=True)
+class DetectConfig(_Overridable):
+    # Peak picking (F-05)
+    sensitivity: float = 0.5          # 0..1, makin besar makin banyak klip
+    threshold_z_max: float = 3.5      # ambang z-score saat sensitivity = 0
+    threshold_z_min: float = 1.0      # ambang z-score saat sensitivity = 1
+    min_peak_gap_s: int = 60
+    pad_before_s: int = 20
+    pad_after_s: int = 15
+    max_clip_s: int = 60
+    smooth_window_s: int = 5
+
+    # Bobot skor gabungan (PRD §12.4); tanpa chat -> audio saja
+    w_audio: float = 0.5
+    w_chat: float = 0.5
+
+    # Chat (F-04)
+    chat_delay_s: int = 7
+    chat_window_s: int = 10
+    chat_baseline_s: int = 60
+
+    # Audio (F-03)
+    audio_sample_rate: int = 16000
+    audio_chunk_s: int = 60
+    audio_baseline_s: int = 60
+    audio_floor_db: float = -100.0
+
+    # Unduhan (F-02)
+    download_max_height: int = 1080
+
+    @property
+    def threshold_z(self) -> float:
+        s = min(max(self.sensitivity, 0.0), 1.0)
+        return self.threshold_z_max - s * (self.threshold_z_max - self.threshold_z_min)
+
+
+@dataclass(frozen=True)
+class RenderConfig(_Overridable):
+    # F-08 / F-09
+    width: int = 1080
+    height: int = 1920
+    fps: int = 30
+    default_template: str = "center"
+    video_encoder: str = "auto"       # auto | h264_nvenc | libx264
+    nvenc_preset: str = "p5"
+    nvenc_cq: int = 21
+    x264_preset: str = "veryfast"
+    x264_crf: int = 20
+    audio_bitrate: str = "160k"
+
+
+@dataclass(frozen=True)
+class SubtitleConfig(_Overridable):
+    # F-10
+    enabled: bool = True
+    model: str = "large-v3"           # medium | large-v3
+    cpu_model: str = "medium"         # dipakai bila fallback ke CPU
+    language: str = "id"
+    device: str = "auto"              # auto | cuda | cpu
+    # Blackwell (RTX 50, sm_120): INT8 dimatikan di CTranslate2 >= 4.6.2 -> pakai float16
+    cuda_compute_type: str = "float16"
+    cpu_compute_type: str = "int8"
+    beam_size: int = 5
+    vad_filter: bool = True
+    sample_rate: int = 16000
+
+    # Pengelompokan kata ala Shorts
+    min_words: int = 2
+    max_words: int = 4
+    max_word_gap_s: float = 0.6       # jeda lebih panjang -> baris baru
+    max_line_s: float = 2.5
+    hold_gap_s: float = 0.3           # tahan baris sampai baris berikut jika jedanya sekecil ini
+    uppercase: bool = True
+
+    # Gaya ASS
+    font_name: str = "Arial Black"
+    font_size: int = 86
+    outline: int = 6
+    shadow: int = 0
+    primary_color: str = "&H00FFFFFF"   # ASS &HAABBGGRR (putih)
+    outline_color: str = "&H00000000"   # hitam
+    pop_animation: bool = True
+    # Posisi baseline teks, sebagai fraksi tinggi area gameplay dari atas (tengah-bawah)
+    position_in_gameplay: float = 0.78
+    side_margin: int = 60
+
+
+@dataclass(frozen=True)
+class ThumbnailConfig(_Overridable):
+    # F-11
+    enabled: bool = True
+    landscape: bool = False             # juga buat 1280x720
+    landscape_width: int = 1280
+    landscape_height: int = 720
+    intro_frame: bool = False           # sisipkan thumbnail sebagai frame pembuka klip
+    intro_duration_s: float = 0.1
+
+    # Kandidat frame di sekitar puncak
+    n_frames: int = 9
+    window_before_s: float = 3.0
+    window_after_s: float = 2.0
+
+    # Deteksi wajah (MediaPipe Tasks FaceDetector)
+    face_model_url: str = (
+        "https://storage.googleapis.com/mediapipe-models/face_detector/"
+        "blaze_face_short_range/float16/latest/blaze_face_short_range.tflite"
+    )
+    face_min_confidence: float = 0.5
+    sharpness_ref: float = 150.0        # variance of Laplacian dianggap "tajam penuh"
+
+    # Teks
+    text_max_words: int = 5
+    text_window_s: float = 3.0          # kata di sekitar puncak (± detik) untuk teks default
+    fallback_text: str = "MOMEN SERU!"
+    uppercase: bool = True
+    font_path: str = ""                 # kosong = cari font tebal bawaan sistem
+    font_size_ratio: float = 0.12       # ukuran font awal relatif lebar gambar
+    min_font_size_ratio: float = 0.05
+    max_lines: int = 3
+    line_spacing: float = 1.05
+    margin_ratio: float = 0.06
+    text_color: str = "#FFFFFF"
+    highlight_color: str = "#FFE600"    # warna kata terakhir; kosong = tanpa highlight
+    stroke_color: str = "#000000"
+    stroke_ratio: float = 0.09          # tebal outline relatif ukuran font
+    # Posisi pusat teks (fraksi tinggi), dipilih yang menjauhi wajah
+    text_y_top: float = 0.2
+    text_y_bottom: float = 0.72
+
+
+SECTIONS: dict[str, type] = {
+    "detect": DetectConfig,
+    "render": RenderConfig,
+    "subtitle": SubtitleConfig,
+    "thumbnail": ThumbnailConfig,
+}
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    data_dir: Path = DEFAULT_DATA_DIR
+    detect: DetectConfig = field(default_factory=DetectConfig)
+    render: RenderConfig = field(default_factory=RenderConfig)
+    subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
+    thumbnail: ThumbnailConfig = field(default_factory=ThumbnailConfig)
+    config_file: Path = DEFAULT_DATA_DIR / "config.json"
+
+    @property
+    def jobs_dir(self) -> Path:
+        return self.data_dir / "jobs"
+
+    @property
+    def models_dir(self) -> Path:
+        return self.data_dir / "models"
+
+    @property
+    def templates_dir(self) -> Path:
+        return self.data_dir / "templates"
+
+    @property
+    def db_path(self) -> Path:
+        return self.data_dir / "app.db"
+
+    def to_settings(self) -> dict[str, Any]:
+        return {
+            "data_dir": str(self.data_dir),
+            **{name: getattr(self, name).to_dict() for name in SECTIONS},
+        }
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"config.json tidak valid ({path}): {e}") from e
+
+
+def resolve_config_file(data_dir: Path | None = None) -> tuple[Path, Path | None]:
+    """(lokasi config.json, data_dir eksplisit). Tanpa argumen/env, config.json selalu di
+    <repo>/data sehingga pengaturan `data_dir` (F-14) bisa menunjuk ke folder lain."""
+    if data_dir is not None:
+        return data_dir / "config.json", data_dir
+    env = os.environ.get("AUTOCLIP_DATA_DIR")
+    if env:
+        return Path(env) / "config.json", Path(env)
+    return DEFAULT_DATA_DIR / "config.json", None
+
+
+def load_config(data_dir: Path | None = None) -> AppConfig:
+    """Muat config: default -> config.json (kunci `data_dir`, `detect`, `render`, `subtitle`,
+    `thumbnail`; boleh parsial). Prioritas data_dir: argumen > env AUTOCLIP_DATA_DIR > config.json."""
+    config_file, explicit = resolve_config_file(data_dir)
+    raw = _read_json(config_file)
+    resolved = explicit or (Path(raw["data_dir"]) if raw.get("data_dir") else DEFAULT_DATA_DIR)
+    sections = {name: cls().with_overrides(**raw.get(name, {})) for name, cls in SECTIONS.items()}
+    return AppConfig(data_dir=resolved, config_file=config_file, **sections)
+
+
+def _coerce(value: Any, default: Any, key: str) -> Any:
+    if isinstance(default, bool):
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} harus boolean")
+        return value
+    if isinstance(default, int):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
+            raise ValueError(f"{key} harus bilangan bulat")
+        return int(value)
+    if isinstance(default, float):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{key} harus angka")
+        return float(value)
+    if isinstance(default, str):
+        if not isinstance(value, str):
+            raise ValueError(f"{key} harus teks")
+        return value
+    return value
+
+
+def validate_settings(cfg: AppConfig) -> None:
+    d, s = cfg.detect, cfg.subtitle
+    checks = [
+        (0.0 <= d.sensitivity <= 1.0, "detect.sensitivity harus 0..1"),
+        (d.min_peak_gap_s >= 1, "detect.min_peak_gap_s harus ≥ 1"),
+        (d.pad_before_s >= 0 and d.pad_after_s >= 0, "padding tidak boleh negatif"),
+        (1 <= d.max_clip_s <= 60, "detect.max_clip_s harus 1..60"),
+        (d.w_audio >= 0 and d.w_chat >= 0 and d.w_audio + d.w_chat > 0, "bobot harus ≥ 0 dan tidak keduanya 0"),
+        (0 <= d.chat_delay_s <= 60, "detect.chat_delay_s harus 0..60"),
+        (d.download_max_height in (360, 480, 720, 1080, 1440, 2160), "resolusi unduhan tidak didukung"),
+        (s.device in ("auto", "cuda", "cpu"), "subtitle.device harus auto|cuda|cpu"),
+        (cfg.render.video_encoder in ("auto", "h264_nvenc", "libx264"), "render.video_encoder tidak dikenal"),
+    ]
+    for ok, msg in checks:
+        if not ok:
+            raise ValueError(msg)
+
+
+def save_settings(current: AppConfig, updates: dict[str, Any]) -> AppConfig:
+    """Gabungkan perubahan parsial (F-14) ke config.json lalu kembalikan config baru.
+
+    Perubahan `data_dir` baru berlaku setelah aplikasi direstart.
+    """
+    raw = _read_json(current.config_file)
+    for key, value in updates.items():
+        if key == "data_dir":
+            if value in (None, ""):
+                raw.pop("data_dir", None)
+            elif not isinstance(value, str):
+                raise ValueError("data_dir harus teks")
+            else:
+                raw["data_dir"] = value
+            continue
+        if key not in SECTIONS:
+            raise ValueError(f"Bagian pengaturan tidak dikenal: {key}")
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} harus objek")
+        defaults = SECTIONS[key]().to_dict()
+        section = dict(raw.get(key, {}))
+        for k, v in value.items():
+            if k not in defaults:
+                raise ValueError(f"Pengaturan tidak dikenal: {key}.{k}")
+            section[k] = _coerce(v, defaults[k], f"{key}.{k}")
+        raw[key] = section
+
+    sections = {name: cls().with_overrides(**raw.get(name, {})) for name, cls in SECTIONS.items()}
+    candidate = AppConfig(data_dir=current.data_dir, config_file=current.config_file, **sections)
+    validate_settings(candidate)
+    current.config_file.parent.mkdir(parents=True, exist_ok=True)
+    current.config_file.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+    return candidate

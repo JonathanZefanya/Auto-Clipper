@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-clip-backend"
+version = "0.1.0"
+description = "Auto clipper: deteksi momen seru dari VOD YouTube"
+requires-python = ">=3.11"
+dependencies = [
+    "yt-dlp>=2024.10.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "librosa>=0.10",
+    "faster-whisper>=1.2.1",
+    # >= 4.6.3: build CUDA 12.8 (wajib untuk RTX 50 / Blackwell sm_120); diuji 4.8.3
+    "ctranslate2>=4.6.3,<5",
+    # F-11: Tasks API FaceDetector (mp.solutions lama tidak dipakai)
+    "mediapipe>=0.10.14",
+    "pillow>=10.1",
+    # M4: API
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlmodel>=0.0.22",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+# Library CUDA untuk Whisper di GPU (cuDNN tidak lagi wajib sejak ctranslate2 4.6.3)
+cuda = ["nvidia-cublas-cu12>=12.8"]
+
+[tool.setuptools.packages.find]
+include = ["app*", "clipper*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
