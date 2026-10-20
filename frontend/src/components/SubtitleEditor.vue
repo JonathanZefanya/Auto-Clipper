@@ -77,9 +77,9 @@ async function reset() {
 </script>
 
 <template>
-  <div class="card flex flex-col gap-3">
+  <div class="flex flex-col gap-3 p-3">
     <div class="flex items-center justify-between gap-2">
-      <h3 class="text-sm font-semibold">Subtitle klip #{{ candidate.rank }}</h3>
+      <h3 class="text-sm font-semibold">Klip #{{ candidate.rank }}</h3>
       <span
         v-if="subs"
         class="rounded px-1.5 py-0.5 text-[10px]"
@@ -113,7 +113,7 @@ async function reset() {
         transkripsi ulang bila perlu.
       </p>
 
-      <ul class="flex max-h-80 flex-col gap-1.5 overflow-y-auto pr-1">
+      <ul class="flex flex-col gap-1.5">
         <li v-for="(ln, i) in draft" :key="i" class="flex items-center gap-1.5">
           <button
             type="button"

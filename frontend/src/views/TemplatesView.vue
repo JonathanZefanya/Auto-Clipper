@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api, errorMessage, type Box, type Template } from '@/api'
+import Icon from '@/components/Icon.vue'
 import { fmtTime } from '@/format'
 import { coverStyle as coverStyleOf } from '@/layout'
 import { useAppStore } from '@/stores/app'
@@ -147,86 +148,86 @@ async function remove(name: string) {
 </script>
 
 <template>
-  <div class="grid gap-5 lg:grid-cols-[220px_1fr_auto]">
-    <aside class="flex flex-col gap-2">
-      <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold">Template</h1>
-        <button class="btn btn-ghost px-2 text-xs" @click="newTemplate">+ Baru</button>
+  <div class="flex flex-col lg:h-screen lg:flex-row">
+    <!-- daftar template -->
+    <aside class="flex shrink-0 flex-col border-b border-line bg-panel lg:w-56 lg:border-r lg:border-b-0">
+      <div class="flex h-12 items-center justify-between border-b border-line px-3">
+        <h1 class="text-sm font-semibold">Template</h1>
+        <button class="btn btn-ghost btn-sm" @click="newTemplate"><Icon name="plus" :size="12" /> Baru</button>
       </div>
-      <button
-        v-for="tpl in app.templates"
-        :key="tpl.name"
-        class="flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm"
-        :class="tpl.name === edit.name ? 'border-accent-500 bg-zinc-900' : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700'"
-        @click="load(tpl)"
-      >
-        <span>
-          {{ tpl.name }}
-          <span class="block text-xs text-zinc-500">{{ tpl.layout_type === 'split' ? 'facecam + gameplay' : 'center crop' }}</span>
-        </span>
-        <span v-if="!tpl.builtin" class="text-xs text-zinc-500 hover:text-red-400" @click.stop="remove(tpl.name)">hapus</span>
-      </button>
+      <div class="flex flex-col gap-0.5 overflow-y-auto p-2">
+        <button
+          v-for="tpl in app.templates"
+          :key="tpl.name"
+          class="group flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm"
+          :class="tpl.name === edit.name ? 'bg-panel-3 text-zinc-50' : 'text-zinc-300 hover:bg-panel-2'"
+          @click="load(tpl)"
+        >
+          <Icon name="layout" :size="14" class="text-zinc-500" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate">{{ tpl.name }}</span>
+            <span class="block text-[11px] text-zinc-500">{{ tpl.layout_type === 'split' ? 'facecam + gameplay' : 'center crop' }}</span>
+          </span>
+          <span
+            v-if="!tpl.builtin"
+            class="text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-red-400"
+            title="Hapus template"
+            @click.stop="remove(tpl.name)"
+          ><Icon name="trash" :size="13" /></span>
+        </button>
+      </div>
     </aside>
 
-    <section class="flex min-w-0 flex-col gap-4">
-      <div class="card grid gap-3 sm:grid-cols-3">
-        <div>
-          <label class="label" for="tn">Nama</label>
-          <input id="tn" v-model="edit.name" class="input" :class="{ 'border-red-700': !nameValid }" />
-        </div>
-        <div>
-          <label class="label" for="tl">Layout</label>
-          <select id="tl" v-model="edit.layout_type" class="input">
-            <option value="split">Split (facecam atas, gameplay bawah)</option>
-            <option value="center_crop">Center crop</option>
+    <!-- kanvas -->
+    <section class="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
+      <div class="panel flex flex-wrap items-end gap-3 p-3">
+        <div class="min-w-48 flex-1">
+          <label class="label" for="src">Frame dari job</label>
+          <select id="src" v-model="jobId" class="input">
+            <option v-if="!sourceJobs.length" value="">(belum ada job dengan video)</option>
+            <option v-for="j in sourceJobs" :key="j.id" :value="j.id">{{ j.title || j.id }}</option>
           </select>
         </div>
-        <div v-if="edit.layout_type === 'split'">
-          <label class="label" for="tr">Tinggi facecam · {{ Math.round(edit.top_ratio * 100) }}%</label>
-          <input id="tr" v-model.number="edit.top_ratio" type="range" min="0.2" max="0.6" step="0.01" class="w-full accent-violet-500" />
+        <div class="min-w-48 flex-1">
+          <label class="label" for="ts">Waktu · {{ fmtTime(t) }}</label>
+          <input id="ts" v-model.number="t" type="range" min="0" :max="Math.max(1, (currentJob?.duration ?? 600) - 1)" step="1" class="w-full accent-violet-500" />
         </div>
+        <button
+          type="button"
+          class="btn btn-ghost"
+          :disabled="!jobId || detecting"
+          title="Cari facecam dari beberapa frame video (MediaPipe)"
+          @click="autoDetect"
+        >
+          <Icon :name="detecting ? 'loader' : 'sparkles'" :size="14" /> {{ detecting ? 'Mendeteksi…' : 'Deteksi facecam' }}
+        </button>
       </div>
 
-      <div class="card flex flex-col gap-3">
-        <div class="flex flex-wrap items-end gap-3">
-          <div class="min-w-48 flex-1">
-            <label class="label" for="src">Frame dari job</label>
-            <select id="src" v-model="jobId" class="input">
-              <option v-if="!sourceJobs.length" value="">(belum ada job dengan video)</option>
-              <option v-for="j in sourceJobs" :key="j.id" :value="j.id">{{ j.title || j.id }}</option>
-            </select>
-          </div>
-          <div class="min-w-48 flex-1">
-            <label class="label" for="ts">Waktu · {{ fmtTime(t) }}</label>
-            <input id="ts" v-model.number="t" type="range" min="0" :max="Math.max(1, (currentJob?.duration ?? 600) - 1)" step="1" class="w-full accent-violet-500" />
-          </div>
-          <div class="flex flex-wrap gap-1">
-            <button
-              type="button"
-              class="btn btn-ghost"
-              :disabled="!jobId || detecting"
-              title="Cari facecam dari beberapa frame video (MediaPipe)"
-              @click="autoDetect"
-            >
-              {{ detecting ? 'Mendeteksi…' : '✨ Deteksi facecam' }}
-            </button>
-            <button
-              v-if="edit.layout_type === 'split'"
-              type="button"
-              class="btn"
-              :class="mode === 'facecam' ? 'btn-primary' : 'btn-ghost'"
-              @click="mode = 'facecam'"
-            >Kotak facecam</button>
-            <button type="button" class="btn" :class="mode === 'gameplay' ? 'btn-primary' : 'btn-ghost'" @click="mode = 'gameplay'">
-              Kotak gameplay
-            </button>
-          </div>
+      <div class="panel flex flex-col overflow-hidden">
+        <div class="flex items-center gap-1 border-b border-line px-2 py-1.5">
+          <span class="px-1 text-[11px] text-zinc-500 uppercase">Gambar kotak:</span>
+          <button
+            v-if="edit.layout_type === 'split'"
+            type="button"
+            class="btn btn-sm"
+            :class="mode === 'facecam' ? 'bg-pink-500/20 text-pink-200 ring-1 ring-pink-500/50' : 'btn-quiet'"
+            @click="mode = 'facecam'"
+          >facecam</button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="mode === 'gameplay' ? 'bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-500/50' : 'btn-quiet'"
+            @click="mode = 'gameplay'"
+          >gameplay</button>
+          <span class="flex-1" />
+          <button type="button" class="btn btn-quiet btn-sm" @click="mode === 'facecam' ? (edit.facecam_box = null) : (edit.gameplay_box = null)">
+            <Icon name="refresh" :size="12" /> Reset {{ mode }}
+          </button>
         </div>
-
         <div
           v-if="frameUrl"
           ref="frameEl"
-          class="relative cursor-crosshair touch-none overflow-hidden rounded-lg bg-black select-none"
+          class="relative cursor-crosshair touch-none overflow-hidden bg-black select-none"
           @pointerdown="onDown"
           @pointermove="onMove"
           @pointerup="onUp"
@@ -245,32 +246,50 @@ async function remove(name: string) {
             <span class="absolute -top-0.5 left-0 bg-cyan-500 px-1 text-[10px] text-white">gameplay</span>
           </div>
         </div>
-        <p v-else class="py-10 text-center text-sm text-zinc-500">Proses minimal satu video untuk mengambil frame.</p>
-
-        <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
-          <span>Seret di atas frame untuk menggambar kotak <b>{{ mode }}</b>. Kotak gameplay kosong = seluruh frame.</span>
-          <button type="button" class="btn btn-ghost px-2 py-1 text-xs" @click="mode === 'facecam' ? (edit.facecam_box = null) : (edit.gameplay_box = null)">
-            Reset kotak {{ mode }}
-          </button>
-        </div>
+        <p v-else class="py-16 text-center text-sm text-zinc-500">Proses minimal satu video untuk mengambil frame.</p>
+        <p class="border-t border-line px-3 py-2 text-xs text-zinc-500">
+          Seret di atas frame untuk menggambar kotak <b class="text-zinc-300">{{ mode }}</b>. Kotak gameplay kosong = seluruh frame.
+        </p>
       </div>
     </section>
 
-    <aside class="flex flex-col items-center gap-3">
-      <span class="label">Preview 9:16</span>
-      <div class="overflow-hidden rounded-xl ring-1 ring-zinc-700" :style="{ width: `${PW}px`, height: `${PH}px` }">
-        <template v-if="edit.layout_type === 'split'">
-          <div class="bg-zinc-900 bg-no-repeat" :style="coverStyle(edit.facecam_box, PW, topH)" />
-          <div class="bg-zinc-900 bg-no-repeat" :style="coverStyle(edit.gameplay_box, PW, PH - topH)" />
-        </template>
-        <div v-else class="bg-zinc-900 bg-no-repeat" :style="coverStyle(edit.gameplay_box, PW, PH)" />
+    <!-- inspector -->
+    <aside class="flex shrink-0 flex-col border-t border-line bg-panel lg:w-72 lg:border-t-0 lg:border-l">
+      <div class="panel-header">Properti</div>
+      <div class="flex flex-col gap-3 p-3">
+        <div>
+          <label class="label" for="tn">Nama</label>
+          <input id="tn" v-model="edit.name" class="input" :class="{ 'border-red-700': !nameValid }" />
+          <p v-if="!nameValid" class="mt-1 text-[11px] text-red-400">Huruf, angka, - atau _ saja.</p>
+        </div>
+        <div>
+          <label class="label" for="tl">Layout</label>
+          <select id="tl" v-model="edit.layout_type" class="input">
+            <option value="split">Split (facecam atas, gameplay bawah)</option>
+            <option value="center_crop">Center crop</option>
+          </select>
+        </div>
+        <div v-if="edit.layout_type === 'split'">
+          <div class="flex justify-between"><label class="label" for="tr">Tinggi facecam</label><span class="tabnum text-xs">{{ Math.round(edit.top_ratio * 100) }}%</span></div>
+          <input id="tr" v-model.number="edit.top_ratio" type="range" min="0.2" max="0.6" step="0.01" class="w-full accent-violet-500" />
+        </div>
       </div>
-      <button class="btn btn-primary w-full" :disabled="!canSave || saving" @click="save">
-        {{ saving ? 'Menyimpan…' : 'Simpan template' }}
-      </button>
-      <p v-if="edit.layout_type === 'split' && !edit.facecam_box" class="w-44 text-center text-xs text-amber-400">
-        Gambar kotak facecam dulu.
-      </p>
+      <div class="panel-header border-t">Preview 9:16</div>
+      <div class="flex flex-col items-center gap-3 p-3">
+        <div class="overflow-hidden rounded-md bg-black ring-1 ring-line-strong" :style="{ width: `${PW}px`, height: `${PH}px` }">
+          <template v-if="edit.layout_type === 'split'">
+            <div class="bg-panel-2 bg-no-repeat" :style="coverStyle(edit.facecam_box, PW, topH)" />
+            <div class="bg-panel-2 bg-no-repeat" :style="coverStyle(edit.gameplay_box, PW, PH - topH)" />
+          </template>
+          <div v-else class="bg-panel-2 bg-no-repeat" :style="coverStyle(edit.gameplay_box, PW, PH)" />
+        </div>
+        <p v-if="edit.layout_type === 'split' && !edit.facecam_box" class="flex items-center gap-1.5 text-xs text-amber-400">
+          <Icon name="alert" :size="12" /> Gambar kotak facecam dulu.
+        </p>
+        <button class="btn btn-primary w-full" :disabled="!canSave || saving" @click="save">
+          <Icon :name="saving ? 'loader' : 'check'" :size="14" /> {{ saving ? 'Menyimpan…' : 'Simpan template' }}
+        </button>
+      </div>
     </aside>
   </div>
 </template>
