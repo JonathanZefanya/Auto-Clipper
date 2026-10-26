@@ -17,7 +17,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import select
 
 from app import runner
-from app.api import candidates, jobs, settings, templates
+from app.api import candidates, jobs, llm, settings, templates
 from app.config import REPO_ROOT, AppConfig, load_config
 from app.db import make_engine, session
 from app.models import ACTIVE_STATUSES, STATUSES, Candidate, Job
@@ -122,7 +122,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"],
     )
-    for r in (jobs.router, candidates.router, templates.router, settings.router):
+    for r in (jobs.router, candidates.router, templates.router, settings.router, llm.router):
         app.include_router(r)
 
     @app.get("/api/health")

@@ -51,3 +51,5 @@ class Candidate(SQLModel, table=True):
     thumb_text: Optional[str] = None
     credit_path: Optional[str] = None
     subs_path: Optional[str] = None       # F-16: dokumen subtitle yang bisa diedit
+    title: Optional[str] = None           # F-19: judul klip pilihan pengguna
+    title_suggestions: Optional[str] = None  # F-19: JSON {titles, description, hashtags, model}

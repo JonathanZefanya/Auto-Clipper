@@ -1,6 +1,7 @@
 """Schema request/response API."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -50,6 +51,8 @@ class CandidateOut(BaseModel):
     thumb_text: Optional[str]
     credit_path: Optional[str]
     subs_path: Optional[str] = None
+    title: Optional[str] = None                 # F-19
+    suggestions: Optional[dict] = None          # F-19: {titles, description, hashtags, model}
     clip_url: Optional[str]
     thumb_url: Optional[str]
     thumb_landscape_url: Optional[str]
@@ -59,8 +62,13 @@ class CandidateOut(BaseModel):
         def url(path: Optional[str]) -> Optional[str]:
             return f"/api/jobs/{c.job_id}/files/{path}" if path else None
 
+        try:
+            suggestions = json.loads(c.title_suggestions) if c.title_suggestions else None
+        except json.JSONDecodeError:
+            suggestions = None
         return cls(
-            **c.model_dump(exclude={"id"}), id=c.id or 0, duration=round(c.end - c.start, 3),
+            **c.model_dump(exclude={"id", "title_suggestions"}), id=c.id or 0, duration=round(c.end - c.start, 3),
+            suggestions=suggestions,
             clip_url=url(c.clip_path), thumb_url=url(c.thumb_path),
             thumb_landscape_url=url(c.thumb_landscape_path),
         )
@@ -108,7 +116,8 @@ class CandidatePatch(BaseModel):
     selected: Optional[bool] = None
     start: Optional[float] = None
     end: Optional[float] = None
-    thumb_text: Optional[str] = None
+    thumb_text: Optional[str] = Field(None, max_length=200)
+    title: Optional[str] = Field(None, max_length=150)   # F-19: kosong = hapus judul
 
 
 class SelectionIn(BaseModel):

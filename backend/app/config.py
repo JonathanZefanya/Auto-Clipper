@@ -13,6 +13,9 @@ DEFAULT_DATA_DIR = REPO_ROOT / "data"
 _ASS_COLOR_RE = re.compile(r"^&H[0-9A-Fa-f]{8}$")
 _SAFE_MODEL_URL_PREFIX = "https://storage.googleapis.com/mediapipe-models/"
 _WHISPER_MODELS = ("medium", "large-v3")
+# F-19: Ollama hanya di mesin ini (cegah pengaturan diarahkan ke server lain)
+_LOCAL_URL_RE = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?/?$")
+_MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-/]{0,80}(:[A-Za-z0-9._\-]{1,40})?$")
 
 
 class _Overridable:
@@ -220,12 +223,28 @@ class FacecamConfig(_Overridable):
     face_y_in_box: float = 0.42         # posisi pusat wajah di dalam kotak (dari atas)
 
 
+@dataclass(frozen=True)
+class TitleConfig(_Overridable):
+    # F-19: saran judul klip via LLM lokal (Ollama)
+    enabled: bool = True
+    ollama_url: str = "http://127.0.0.1:11434"   # hanya localhost (lihat validate_settings)
+    model: str = "qwen2.5:7b"
+    count: int = 3                      # jumlah opsi judul
+    hashtags: int = 5
+    max_title_chars: int = 80           # batas aman judul Shorts (YouTube maks 100)
+    max_transcript_chars: int = 2000
+    temperature: float = 0.8
+    timeout_s: int = 180                # termasuk waktu memuat model ke VRAM
+    keep_alive: str = "0"               # "0" = unload segera → VRAM bebas untuk Whisper/NVENC
+
+
 SECTIONS: dict[str, type] = {
     "detect": DetectConfig,
     "render": RenderConfig,
     "subtitle": SubtitleConfig,
     "thumbnail": ThumbnailConfig,
     "facecam": FacecamConfig,
+    "title": TitleConfig,
 }
 
 
@@ -237,6 +256,7 @@ class AppConfig:
     subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
     thumbnail: ThumbnailConfig = field(default_factory=ThumbnailConfig)
     facecam: FacecamConfig = field(default_factory=FacecamConfig)
+    title: TitleConfig = field(default_factory=TitleConfig)
     config_file: Path = DEFAULT_DATA_DIR / "config.json"
 
     @property
@@ -338,6 +358,12 @@ def validate_settings(cfg: AppConfig) -> None:
              for u in (d.reaction_model_url, d.face_model_url, cfg.thumbnail.face_model_url)),
          "URL model harus berasal dari repositori resmi MediaPipe"),
         (cfg.render.video_encoder in ("auto", "h264_nvenc", "libx264"), "render.video_encoder tidak dikenal"),
+        (bool(_LOCAL_URL_RE.match(cfg.title.ollama_url)), "title.ollama_url hanya boleh localhost (http://127.0.0.1:PORT)"),
+        (bool(_MODEL_NAME_RE.match(cfg.title.model)), "title.model tidak valid (mis. qwen2.5:7b)"),
+        (1 <= cfg.title.count <= 10 and 0 <= cfg.title.hashtags <= 15, "title.count 1..10, title.hashtags 0..15"),
+        (20 <= cfg.title.max_title_chars <= 100, "title.max_title_chars harus 20..100"),
+        (0.0 <= cfg.title.temperature <= 2.0, "title.temperature harus 0..2"),
+        (5 <= cfg.title.timeout_s <= 900, "title.timeout_s harus 5..900"),
     ]
     for ok, msg in checks:
         if not ok:

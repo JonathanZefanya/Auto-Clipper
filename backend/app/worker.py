@@ -350,7 +350,7 @@ class Worker:
             ensure_default_templates(cfg.templates_dir)
             template = load_template(cfg.templates_dir, template_name)
             specs = [
-                runner.ClipSpec(c.rank, c.start, c.end, c.peak_time, c.thumb_text or None) for c in cands
+                runner.clip_spec(c) for c in cands
             ]
             set_status(self.engine, job_id, "rendering", progress=0, message="mulai render")
             reporter = DbReporter(self.engine, job_id, cancel_event=self._cancel_event)

@@ -224,6 +224,51 @@ def cmd_templates(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_titles(args: argparse.Namespace) -> int:
+    """F-19: saran judul untuk kandidat yang sudah ditranskripsi (butuh Ollama)."""
+    from types import SimpleNamespace
+
+    from app.pipeline.titles import TitleError
+    from app.runner import Credit, clip_spec, suggest_clip_titles
+
+    app_cfg = load_config(Path(args.data_dir) if args.data_dir else None)
+    tcfg = app_cfg.title.with_overrides(model=args.model)
+    try:
+        job = load_job(app_cfg.jobs_dir, args.job_id)
+        ids = parse_ids(args.ids)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    cand_path = job.dir / "candidates.json"
+    candidates = json.loads(cand_path.read_text(encoding="utf-8")) if cand_path.exists() else []
+    by_rank = {c["rank"]: c for c in candidates}
+    credit = Credit(job.title, job.url, job.channel)
+    code = 0
+    for rank in ids:
+        c = by_rank.get(rank)
+        if c is None:
+            print(f"#{rank}: kandidat tidak ada", file=sys.stderr)
+            code = 2
+            continue
+        print(f"#{rank} ({fmt_time(c['start'])}–{fmt_time(c['end'])}) — meminta saran ke {tcfg.model} …")
+        try:
+            sug = suggest_clip_titles(job.dir, clip_spec(SimpleNamespace(**{**{"thumb_text": None}, **c})),
+                                      credit, app_cfg.subtitle, tcfg)
+        except TitleError as e:
+            print(f"  Error: {e}", file=sys.stderr)
+            code = 1
+            continue
+        for i, t in enumerate(sug.titles, start=1):
+            print(f"  {i}. {t}")
+        if sug.description:
+            print(f"  Deskripsi: {sug.description}")
+        if sug.hashtags:
+            print(f"  Hashtag  : {' '.join(sug.hashtags)}")
+        c["title_suggestions"] = json.dumps(sug.to_dict(), ensure_ascii=False)
+    write_json(cand_path, candidates)
+    return code
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -271,6 +316,13 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--only-thumbs", action="store_true", help="Buat ulang thumbnail saja, tanpa render video")
     r.add_argument("--data-dir", help="Folder data (default: <repo>/data)")
     r.set_defaults(func=cmd_render)
+
+    ti = sub.add_parser("titles", help="Saran judul klip via LLM lokal (Ollama); klip harus sudah ditranskripsi")
+    ti.add_argument("job_id", help="ID job (folder di data/jobs/)")
+    ti.add_argument("--ids", required=True, help="Rank kandidat, dipisah koma, mis. 1,2")
+    ti.add_argument("--model", help="Model Ollama (default: dari config, qwen2.5:7b)")
+    ti.add_argument("--data-dir", help="Folder data (default: <repo>/data)")
+    ti.set_defaults(func=cmd_titles)
 
     t = sub.add_parser("templates", help="Tampilkan template layout yang tersedia")
     t.add_argument("--data-dir", help="Folder data (default: <repo>/data)")

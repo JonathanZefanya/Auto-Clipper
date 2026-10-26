@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { errorMessage } from '@/api'
+import { api, errorMessage, type LlmStatus } from '@/api'
 import Icon from '@/components/Icon.vue'
 import { useAppStore } from '@/stores/app'
 
@@ -33,6 +33,7 @@ const SECTIONS = [
   { id: 'klip', label: 'Klip' },
   { id: 'subtitle', label: 'Subtitle' },
   { id: 'output', label: 'Render & thumbnail' },
+  { id: 'judul', label: 'Saran judul (LLM)' },
   { id: 'penyimpanan', label: 'Penyimpanan' },
 ]
 
@@ -41,14 +42,30 @@ const form = reactive<{
   render: Record<string, string | number>
   subtitle: Record<string, string | number | boolean>
   thumbnail: Record<string, string | number | boolean>
+  title: Record<string, string | number | boolean>
   data_dir: string
 }>({
   detect: {},
   render: {},
   subtitle: {},
   thumbnail: {},
+  title: {},
   data_dir: '',
 })
+
+// F-19: status Ollama (jalan? model sudah diunduh?)
+const llm = ref<LlmStatus | null>(null)
+const llmChecking = ref(false)
+async function checkLlm() {
+  llmChecking.value = true
+  try {
+    llm.value = await api.llmStatus()
+  } catch (e) {
+    app.notify(errorMessage(e), 'error')
+  } finally {
+    llmChecking.value = false
+  }
+}
 const snapshot = ref('')
 const dirty = computed(() => loaded.value && JSON.stringify(form) !== snapshot.value)
 
@@ -59,6 +76,7 @@ function fill() {
   form.render = { ...s.render }
   form.subtitle = { ...s.subtitle }
   form.thumbnail = { ...s.thumbnail }
+  form.title = { ...(s.title ?? {}) }
   form.data_dir = s.data_dir_configured
   snapshot.value = JSON.stringify(form)
 }
@@ -68,6 +86,7 @@ onMounted(async () => {
     await Promise.all([app.loadSettings(), app.loadTemplates()])
     fill()
     loaded.value = true
+    void checkLlm()
   } catch (e) {
     app.notify(errorMessage(e), 'error')
   }
@@ -88,10 +107,12 @@ async function save() {
       subtitle: pick(form.subtitle, ['enabled', 'model', 'device', 'language']),
       thumbnail: pick(form.thumbnail, ['enabled', 'landscape', 'intro_frame']),
       render: pick(form.render, ['video_encoder', 'default_template']),
+      title: pick(form.title, ['enabled', 'ollama_url', 'model']),
     }
     if (form.data_dir.trim() !== app.settings?.data_dir_configured) body.data_dir = form.data_dir.trim()
     await app.saveSettings(body)
     fill()
+    void checkLlm()
     app.notify(
       app.settings?.restart_required ? 'Tersimpan. Restart backend agar folder data baru dipakai.' : 'Pengaturan tersimpan',
       'success',
@@ -212,6 +233,50 @@ async function save() {
             <label class="flex items-center gap-2"><input v-model="form.thumbnail.landscape" type="checkbox" class="check" /> Juga buat thumbnail 1280×720</label>
             <label class="flex items-center gap-2"><input v-model="form.thumbnail.intro_frame" type="checkbox" class="check" /> Sisipkan thumbnail sebagai frame pembuka klip</label>
           </div>
+        </div>
+      </section>
+
+      <section id="judul" class="panel scroll-mt-8">
+        <div class="panel-header">
+          Saran judul (Ollama)
+          <label class="flex items-center gap-2 normal-case tracking-normal text-zinc-300">
+            <input v-model="form.title.enabled" type="checkbox" class="check" /> aktif
+          </label>
+        </div>
+        <div class="flex flex-col gap-4 p-4">
+          <div
+            class="flex items-start gap-2 rounded-md border px-3 py-2 text-xs"
+            :class="llm?.model_ready ? 'border-emerald-900 bg-emerald-950/30 text-emerald-200'
+              : llm ? 'border-amber-900 bg-amber-950/30 text-amber-200' : 'border-line text-zinc-400'"
+          >
+            <Icon :name="llmChecking ? 'loader' : llm?.model_ready ? 'check' : 'alert'" :size="14" class="mt-0.5" />
+            <span class="flex-1">
+              <template v-if="!llm">Memeriksa Ollama…</template>
+              <template v-else-if="llm.model_ready">Ollama jalan · model <b>{{ llm.model }}</b> siap.</template>
+              <template v-else>{{ llm.error }}</template>
+            </span>
+            <button type="button" class="btn btn-quiet btn-sm" :disabled="llmChecking" @click="checkLlm">Cek ulang</button>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="label" for="ollama-url">URL Ollama</label>
+              <input id="ollama-url" v-model="form.title.ollama_url" class="input font-mono text-xs" placeholder="http://127.0.0.1:11434" />
+              <p class="mt-1 text-[11px] text-zinc-500">Hanya localhost — LLM berjalan di PC ini.</p>
+            </div>
+            <div>
+              <label class="label" for="ollama-model">Model</label>
+              <input id="ollama-model" v-model="form.title.model" class="input font-mono text-xs" list="ollama-models" placeholder="qwen2.5:7b" />
+              <datalist id="ollama-models">
+                <option v-for="m in llm?.models ?? []" :key="m" :value="m" />
+              </datalist>
+              <p class="mt-1 text-[11px] text-zinc-500">
+                Terpasang: {{ llm?.models.length ? llm.models.join(', ') : '—' }} · tambah dengan <span class="font-mono">ollama pull &lt;model&gt;</span>
+              </p>
+            </div>
+          </div>
+          <p class="text-[11px] text-zinc-500">
+            Model dimuat ke GPU hanya saat tombol <b>Sarankan</b> ditekan lalu langsung dilepas, jadi tidak bentrok dengan Whisper/render.
+          </p>
         </div>
       </section>
 

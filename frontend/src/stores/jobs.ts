@@ -85,6 +85,13 @@ export const useJobsStore = defineStore('jobs', () => {
     return c
   }
 
+  /** F-19: saran judul via Ollama (sinkron; beberapa detik saat model dimuat). */
+  async function suggestTitles(id: number) {
+    const c = await api.suggestTitles(id)
+    replaceCandidate(c)
+    return c
+  }
+
   async function setSelection(selected: boolean) {
     if (!current.value) return
     const detail = await api.setSelection(current.value.id, { selected })
@@ -133,7 +140,7 @@ export const useJobsStore = defineStore('jobs', () => {
 
   return {
     list, current, scores,
-    fetchList, load, subscribe, unsubscribe, patchCandidate, setSelection, render, transcribe, setTemplate,
+    fetchList, load, subscribe, unsubscribe, patchCandidate, suggestTitles, setSelection, render, transcribe, setTemplate,
     cancel, remove,
   }
 })

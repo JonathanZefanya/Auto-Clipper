@@ -7,11 +7,13 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import numpy as np
 
-from app.config import DetectConfig, FacecamConfig, RenderConfig, SubtitleConfig, ThumbnailConfig
+from app.config import (
+    DetectConfig, FacecamConfig, RenderConfig, SubtitleConfig, ThumbnailConfig, TitleConfig,
+)
 from app.jobs import write_json
 from app.pipeline import audio, chat, detect, download, subdoc
 from app.pipeline.detect import Candidate
@@ -223,6 +225,9 @@ class ClipSpec:
     end: float
     peak_time: float
     thumb_text: str | None = None
+    title: str | None = None                # F-19: judul klip pilihan pengguna
+    description: str = ""
+    hashtags: tuple[str, ...] = ()
 
 
 @dataclass
@@ -255,18 +260,74 @@ class Credit:
     channel: str
 
 
-def credit_text(credit: Credit, start: float, end: float) -> str:
+def credit_text(
+    credit: Credit, start: float, end: float,
+    title: str | None = None, description: str = "", hashtags: Sequence[str] = (),
+) -> str:
+    """Isi clip_<nn>.txt: judul/deskripsi/hashtag klip (F-19, bila ada) + kredit sumber (F-12)."""
     def ts(s: float) -> str:
         s = int(s)
         return f"{s // 3600:d}:{s % 3600 // 60:02d}:{s % 60:02d}" if s >= 3600 else f"{s // 60:d}:{s % 60:02d}"
 
     sep = "&" if "?" in credit.url else "?"
-    return (
+    head = ""
+    if title:
+        head += f"Judul klip   : {title}\n"
+        if description:
+            head += f"Deskripsi    : {description}\n"
+        if hashtags:
+            head += f"Hashtag      : {' '.join(hashtags)}\n"
+        head += "\n"
+    return head + (
         f"Judul sumber : {credit.title}\n"
         f"Channel      : {credit.channel}\n"
         f"Link sumber  : {credit.url}{sep}t={int(start)}s\n"
         f"Rentang      : {ts(start)} - {ts(end)}\n"
     )
+
+
+def clip_spec(row: Any) -> ClipSpec:
+    """Baris kandidat (DB/duck-typed) → ClipSpec, termasuk deskripsi & hashtag dari saran judul (F-19)."""
+    extra: dict = {}
+    raw = getattr(row, "title_suggestions", None)
+    if raw:
+        try:
+            extra = json.loads(raw)
+        except json.JSONDecodeError:
+            extra = {}
+    return ClipSpec(
+        row.rank, row.start, row.end, row.peak_time, getattr(row, "thumb_text", None) or None,
+        title=getattr(row, "title", None) or None,
+        description=str(extra.get("description") or ""),
+        hashtags=tuple(extra.get("hashtags") or ()),
+    )
+
+
+def write_clip_txt(job_dir: Path, c: ClipSpec, credit: Credit) -> str:
+    """Tulis clips/clip_<nn>.txt; kembalikan path relatif."""
+    txt = job_dir / "clips" / f"clip_{c.rank:02d}.txt"
+    txt.parent.mkdir(parents=True, exist_ok=True)
+    txt.write_text(credit_text(credit, c.start, c.end, c.title, c.description, c.hashtags), encoding="utf-8")
+    return rel_path(txt, job_dir)
+
+
+def suggest_clip_titles(
+    job_dir: Path, c: ClipSpec, credit: Credit, scfg: SubtitleConfig, tcfg: TitleConfig,
+    client: Any = None,
+):
+    """F-19: transkrip klip (dokumen subtitle) + konteks sumber → saran judul via Ollama."""
+    from app.pipeline import titles
+
+    doc = subdoc.load_doc(job_dir, c.rank)
+    if doc is None:
+        raise titles.TitleError("Klip belum ditranskripsi. Klik Transkripsi di tab Subtitle (atau render dulu).")
+    lines = subdoc.display_lines(doc, c.start, c.end, scfg)
+    ctx = titles.ClipContext(
+        transcript=titles.transcript_text([ln.text for ln in lines], tcfg.max_transcript_chars),
+        source_title=credit.title, channel=credit.channel,
+        thumb_text=c.thumb_text or "", duration_s=c.end - c.start,
+    )
+    return titles.suggest(ctx, tcfg, client)
 
 
 @dataclass
@@ -434,9 +495,7 @@ def run_render(
             r.clip_path = rel_path(out, job_dir)
             r.encoder = used
             if credit is not None:
-                txt = clips_dir / f"clip_{c.rank:02d}.txt"
-                txt.write_text(credit_text(credit, c.start, c.end), encoding="utf-8")
-                r.credit_path = rel_path(txt, job_dir)
+                r.credit_path = write_clip_txt(job_dir, c, credit)
             log(f"#{c.rank}: {out.name} ({used})")
         prog.finish("render")
 

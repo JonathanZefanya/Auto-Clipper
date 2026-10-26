@@ -1,6 +1,8 @@
 """F-06 pilih kandidat, F-07 trim awal/akhir."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.engine import Engine
 
@@ -10,7 +12,8 @@ from app.config import AppConfig, SubtitleConfig
 from app.db import session
 from app.models import Candidate, Job
 from app.pipeline import subdoc
-from app.runner import rel_path
+from app.pipeline.titles import TitleError
+from app.runner import Credit, clip_spec, rel_path, suggest_clip_titles, write_clip_txt
 from app.worker import Worker
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
@@ -139,6 +142,35 @@ def patch_candidate(
             c.selected = body.selected
         if body.thumb_text is not None:
             c.thumb_text = body.thumb_text.strip() or None
+        if body.title is not None:
+            c.title = " ".join(body.title.split()) or None
+            # klip sudah dirender → perbarui clip_<nn>.txt agar judul/deskripsi/hashtag ikut tersimpan
+            if c.credit_path and job is not None:
+                write_clip_txt(cfg.jobs_dir / c.job_id, clip_spec(c), Credit(job.title, job.url, job.channel))
+        s.add(c)
+        s.commit()
+        s.refresh(c)
+        return CandidateOut.of(c)
+
+
+@router.post("/{candidate_id}/titles", response_model=CandidateOut)
+def suggest_titles(
+    candidate_id: int, engine: Engine = Depends(deps.engine), w: Worker = Depends(deps.worker),
+    cfg: AppConfig = Depends(deps.config),
+) -> CandidateOut:
+    """F-19: saran judul + deskripsi + hashtag dari transkrip klip via Ollama (sinkron, ±5–60 dtk)."""
+    with session(engine) as s:
+        c, job = _candidate_ctx(s, candidate_id, w)
+        spec, credit = clip_spec(c), Credit(job.title, job.url, job.channel)
+    try:
+        sug = suggest_clip_titles(cfg.jobs_dir / c.job_id, spec, credit, cfg.subtitle, cfg.title)
+    except TitleError as e:
+        raise HTTPException(409, str(e)) from e
+    with session(engine) as s:
+        c = s.get(Candidate, candidate_id)
+        if c is None:
+            raise HTTPException(404, "Kandidat tidak ditemukan")
+        c.title_suggestions = json.dumps(sug.to_dict(), ensure_ascii=False)
         s.add(c)
         s.commit()
         s.refresh(c)

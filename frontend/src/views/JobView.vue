@@ -12,6 +12,7 @@ import ScoreChart from '@/components/ScoreChart.vue'
 import ShortcutHelp from '@/components/ShortcutHelp.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import SubtitleEditor from '@/components/SubtitleEditor.vue'
+import TitleSuggest from '@/components/TitleSuggest.vue'
 import { fmtTime } from '@/format'
 import { nextRange, rangeValid } from '@/trim'
 import { useAppStore } from '@/stores/app'
@@ -364,6 +365,9 @@ const tabs = computed(() => [
               @changed="(has) => active && (active.subs_path = has ? `subs/clip_${String(active.rank).padStart(2, '0')}.json` : null)"
             />
             <p v-else class="p-4 text-sm text-zinc-500">Pilih klip di tab Klip.</p>
+            <div v-if="active?.subs_path" class="border-t border-line p-3">
+              <TitleSuggest :candidate="active" :locked="locked" />
+            </div>
           </template>
           <RenderPanel
             v-else

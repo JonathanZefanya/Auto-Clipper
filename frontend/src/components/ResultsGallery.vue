@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { api, type Candidate, type JobDetail } from '@/api'
 import Icon from '@/components/Icon.vue'
+import TitleSuggest from '@/components/TitleSuggest.vue'
 import { fmtTime } from '@/format'
 
 const props = defineProps<{ job: JobDetail; locked: boolean }>()
@@ -84,6 +85,8 @@ function onTextChange(id: number, e: Event) {
               <img :src="withV(c.thumb_landscape_url)" class="aspect-video w-full rounded object-cover ring-1 ring-line" alt="thumbnail 16:9" />
             </a>
           </div>
+
+          <TitleSuggest :candidate="c" :locked="locked" />
 
           <div>
             <label class="label" :for="`tt-${c.id}`">Teks thumbnail</label>

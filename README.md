@@ -23,6 +23,7 @@ Semua proses berjalan di PC sendiri: tanpa API berbayar, tanpa upload otomatis. 
 | Template 9:16 | **Split** (facecam atas + gameplay bawah) atau **center crop**, editor kotak facecam di UI + **deteksi facecam otomatis** |
 | Render | FFmpeg `h264_nvenc` (fallback `libx264`), 1080×1920, maks 60 detik |
 | Subtitle | faster-whisper Bahasa Indonesia, hanya pada klip terpilih, 2–4 kata per baris gaya Shorts; **bisa diedit sebelum render** |
+| Saran judul | LLM lokal via **Ollama** (default `qwen2.5:7b`): beberapa opsi judul + deskripsi + hashtag dari transkrip klip; ikut tersimpan di file `.txt` klip |
 | Thumbnail | Frame dengan wajah paling jelas (MediaPipe) + teks besar ber-outline; 1080×1920 dan opsional 1280×720; bisa disisipkan sebagai frame pembuka |
 | Hasil | Galeri, unduh per file atau ZIP, file kredit `clip_<nn>.txt` (judul, channel, link + timestamp) |
 | Job | Progres real-time (SSE), satu antrean, **batalkan** job yang antre/berjalan, riwayat tersimpan di SQLite, lanjut otomatis setelah restart |
@@ -63,6 +64,8 @@ winget install Python.Python.3.11
 winget install Gyan.FFmpeg
 winget install OpenJS.NodeJS.LTS
 winget install DenoLand.Deno        # JS runtime yang dibutuhkan yt-dlp untuk YouTube
+winget install Ollama.Ollama        # opsional: saran judul (atau installer dari ollama.com)
+ollama pull qwen2.5:7b              # model LLM ±4,7 GB
 
 # Backend
 cd backend
@@ -121,6 +124,9 @@ python -m clipper render VIDEO_ID --ids 1,2 --thumb-landscape --intro-frame
 
 # Ganti teks thumbnail tanpa render ulang video
 python -m clipper render VIDEO_ID --ids 1 --only-thumbs --thumb-text "WAH GILA!"
+
+# Saran judul (butuh Ollama + klip sudah ditranskripsi/dirender)
+python -m clipper titles VIDEO_ID --ids 1,2
 ```
 
 Pakai `--help` di setiap perintah untuk semua opsi (`--no-subtitle`, `--no-thumbnail`, `--whisper-model`, `--device`, `--encoder`, `--force-download`, ...). Job dari CLI otomatis muncul di riwayat web UI.
@@ -227,4 +233,4 @@ Spesifikasi produk di [PRD.md](PRD.md) dan [Feature.md](Feature.md).
 
 ## Rencana berikutnya
 
-Saran judul dengan LLM lokal (Ollama), aplikasi desktop (Tauri), dukungan Twitch VOD. Lihat bagian "Later" di [Feature.md](Feature.md).
+Aplikasi desktop (Tauri), dukungan Twitch VOD. Lihat bagian "Later" di [Feature.md](Feature.md).

@@ -51,6 +51,8 @@ export interface Candidate {
   thumb_text: string | null
   credit_path: string | null
   subs_path: string | null
+  title: string | null
+  suggestions: TitleSuggestions | null
   clip_url: string | null
   thumb_url: string | null
   thumb_landscape_url: string | null
@@ -113,6 +115,23 @@ export interface Template {
   builtin?: boolean
 }
 
+export interface TitleSuggestions {
+  titles: string[]
+  description: string
+  hashtags: string[]
+  model: string
+}
+
+export interface LlmStatus {
+  enabled: boolean
+  url: string
+  model: string
+  available: boolean
+  models: string[]
+  model_ready: boolean
+  error: string | null
+}
+
 export interface SubLine {
   start: number
   end: number
@@ -148,6 +167,7 @@ export interface Settings {
   render: Record<string, string | number>
   subtitle: Record<string, string | number | boolean>
   thumbnail: Record<string, string | number | boolean>
+  title: Record<string, string | number | boolean>
   options: {
     whisper_models: string[]
     download_heights: number[]
@@ -222,8 +242,10 @@ export const api = {
     request<JobDetail>('POST', `/api/jobs/${id}/selection`, body),
   patchCandidate: (
     id: number,
-    body: Partial<Pick<Candidate, 'selected' | 'start' | 'end'>> & { thumb_text?: string },
+    body: Partial<Pick<Candidate, 'selected' | 'start' | 'end'>> & { thumb_text?: string; title?: string },
   ) => request<Candidate>('PATCH', `/api/candidates/${id}`, body),
+  suggestTitles: (id: number) => request<Candidate>('POST', `/api/candidates/${id}/titles`),
+  llmStatus: () => request<LlmStatus>('GET', '/api/llm/status'),
   render: (id: string, body: Partial<RenderOptions> & { template?: string }) =>
     request<Job>('POST', `/api/jobs/${id}/render`, body),
   cancelJob: (id: string) => request<Job>('POST', `/api/jobs/${id}/cancel`),

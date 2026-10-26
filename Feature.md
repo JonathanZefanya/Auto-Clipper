@@ -28,6 +28,7 @@ Daftar fitur beserta kriteria penerimaan. Konteks produk ada di `PRD.md`.
 | F-16 | Edit subtitle sebelum render | P1 | M5 |
 | F-17 | Auto-deteksi posisi facecam | P1 | M5 |
 | F-18 | Deteksi reaksi wajah (ekspresi) | P1 | M6 |
+| F-19 | Saran judul klip (LLM lokal / Ollama) | P1 | M7 |
 
 ---
 
@@ -202,6 +203,16 @@ Sinyal tambahan untuk YouTuber yang menampilkan wajah (facecam / face reveal).
 - Bisa dimatikan dan bobotnya diatur di Pengaturan; ditampilkan di grafik; bisa dibatalkan seperti langkah lain.
 - Target waktu: ≤ ±5% durasi video untuk 1080p (decode CPU).
 
+## F-19 — Saran Judul Klip (LLM Lokal / Ollama)
+
+**Kriteria penerimaan**
+- Tombol **Sarankan judul** per klip; bahan: transkrip klip (subtitle hasil transkripsi/edit), judul video sumber, nama channel, teks thumbnail.
+- LLM lokal via Ollama (default `qwen2.5:7b`), output terstruktur (JSON schema): beberapa opsi judul Bahasa Indonesia (≤ 80 karakter, tidak menyesatkan), 1 deskripsi singkat, dan hashtag.
+- Pengguna memilih / mengedit judul; judul + deskripsi + hashtag ikut ditulis ke `clip_<nn>.txt` bersama info kredit.
+- Model di-unload setelah dipakai (`keep_alive=0`) agar VRAM bebas untuk Whisper/NVENC.
+- Jika Ollama tidak jalan / model belum diunduh / klip belum ditranskripsi → pesan jelas apa yang harus dilakukan.
+- URL Ollama hanya boleh localhost; model & URL bisa diatur di Pengaturan.
+
 ---
 
 ## Rancangan API (Backend FastAPI)
@@ -224,6 +235,8 @@ Sinyal tambahan untuk YouTuber yang menampilkan wajah (facecam / face reveal).
 | `POST` | `/api/jobs/{id}/transcribe` | Transkripsi kandidat terpilih (F-16) |
 | `GET/PUT/DELETE` | `/api/candidates/{id}/subtitles` | Baca / simpan / reset subtitle (F-16) |
 | `POST` | `/api/jobs/{id}/detect-facecam` | Saran kotak facecam (F-17) |
+| `POST` | `/api/candidates/{id}/titles` | Saran judul + deskripsi + hashtag (F-19) |
+| `GET` | `/api/llm/status` | Status Ollama & daftar model (F-19) |
 
 ## Model Data (SQLite)
 
@@ -263,7 +276,7 @@ auto-clipper/
 ## Later (setelah MVP)
 
 - ~~Deteksi tawa/teriak (YAMNet)~~ → F-15 (M5).
-- Saran judul klip dengan LLM lokal (Ollama).
+- ~~Saran judul klip dengan LLM lokal (Ollama)~~ → F-19 (M7).
 - ~~Edit teks subtitle sebelum render~~ → F-16 (M5).
 - ~~Auto-deteksi posisi facecam~~ → F-17 (M5).
 - Pembungkus aplikasi desktop (Tauri).
