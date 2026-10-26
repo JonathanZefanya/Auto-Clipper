@@ -127,8 +127,12 @@ def patch_candidate(
             validate_range(start, end, cfg.detect.max_clip_s, job.duration if job else 0.0)
             if (start, end) != (c.start, c.end):
                 c.start, c.end = start, end
-                # hasil lama tidak lagi sesuai rentang → perlu render ulang
+                # hasil lama tidak lagi sesuai rentang → hapus file lama & perlu render ulang
                 # (subtitle tetap: waktunya digeser otomatis, lihat subdoc.shift_lines)
+                job_dir = cfg.jobs_dir / c.job_id
+                for old_rel in (c.clip_path, c.credit_path, c.thumb_path, c.thumb_landscape_path):
+                    if old_rel:
+                        (job_dir / old_rel).unlink(missing_ok=True)
                 c.clip_path = c.credit_path = None
                 c.thumb_path = c.thumb_landscape_path = None
         if body.selected is not None:

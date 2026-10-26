@@ -277,6 +277,7 @@ def build_ass(
     """ASS gaya Shorts: font tebal, outline hitam, tengah-bawah area gameplay."""
     baseline_y = gameplay_top + gameplay_height * cfg.position_in_gameplay
     margin_v = max(0, int(round(height - baseline_y)))
+    font_name = re.sub(r"[,\r\n{}]", "", cfg.font_name).strip() or "Arial Black"
     pop = r"{\fscx80\fscy80\t(0,90,\fscx100\fscy100)}" if cfg.pop_animation else ""
     header = (
         "[Script Info]\n"
@@ -287,7 +288,7 @@ def build_ass(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, "
         "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Shorts,{cfg.font_name},{cfg.font_size},{cfg.primary_color},&H000000FF,"
+        f"Style: Shorts,{font_name},{cfg.font_size},{cfg.primary_color},&H000000FF,"
         f"{cfg.outline_color},&H80000000,-1,0,0,0,100,100,0,0,1,{cfg.outline},{cfg.shadow},"
         f"2,{cfg.side_margin},{cfg.side_margin},{margin_v},1\n\n"
         "[Events]\n"

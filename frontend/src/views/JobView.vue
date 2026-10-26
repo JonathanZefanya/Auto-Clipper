@@ -107,7 +107,8 @@ watch(() => props.id, init)
 onBeforeUnmount(() => jobs.unsubscribe())
 // kandidat muncul setelah analisis selesai (SSE 'end' → muat ulang)
 watch(() => job.value?.candidates.length, (n) => {
-  if (n && activeId.value == null) activeId.value = job.value!.candidates[0].id
+  const first = job.value?.candidates[0]
+  if (n && activeId.value == null && first) activeId.value = first.id
 })
 // render selesai → langsung tampilkan hasil
 watch(() => job.value?.status, (now, before) => {
@@ -197,7 +198,7 @@ function trimActive(edge: 'start' | 'end', delta: number) {
 }
 
 function onKey(e: KeyboardEvent) {
-  const el = e.target as HTMLElement | null
+  const el = e.target instanceof HTMLElement ? e.target : null
   if (el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return
   if (!job.value || analysisScreen.value) return
   if (e.key === '?') return void (showHelp.value = !showHelp.value)

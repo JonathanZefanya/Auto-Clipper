@@ -28,6 +28,12 @@ function step(c: Candidate, edge: 'start' | 'end', delta: number) {
 
 // gulir ke klip aktif (mis. saat pindah dengan ↑/↓)
 const rows = ref<Record<number, HTMLElement | null>>({})
+function setRowRef(id: number, el: unknown) {
+  rows.value[id] = el instanceof HTMLElement ? el : null
+}
+function onToggleCheck(id: number, e: Event) {
+  if (e.target instanceof HTMLInputElement) emit('toggle', id, e.target.checked)
+}
 watch(() => props.activeId, async (id) => {
   await nextTick()
   if (id != null) rows.value[id]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -39,7 +45,7 @@ watch(() => props.activeId, async (id) => {
     <li
       v-for="c in candidates"
       :key="c.id"
-      :ref="(el) => (rows[c.id] = el as HTMLElement | null)"
+      :ref="(el) => setRowRef(c.id, el)"
       class="border-b border-line transition-colors"
       :class="c.id === activeId ? 'bg-panel-2' : 'hover:bg-panel-2/50'"
     >
@@ -51,7 +57,7 @@ watch(() => props.activeId, async (id) => {
           :disabled="locked"
           :title="c.selected ? 'Batal pilih (X)' : 'Pilih untuk dirender (X)'"
           @click.stop
-          @change="emit('toggle', c.id, ($event.target as HTMLInputElement).checked)"
+          @change="onToggleCheck(c.id, $event)"
         />
         <span
           class="grid h-6 w-6 shrink-0 place-items-center rounded text-xs font-semibold"

@@ -5,9 +5,12 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 from typing import Any
 
-JOB_STATUSES = ("queued", "downloading", "analyzing", "ready_for_review", "rendering", "done", "failed")
+from app.models import STATUSES as JOB_STATUSES
+
+_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 @dataclass
@@ -40,7 +43,13 @@ class Job:
         self.json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _validate_job_id(job_id: str) -> None:
+    if not _JOB_ID_RE.match(job_id):
+        raise ValueError(f"ID job tidak valid: {job_id!r}")
+
+
 def create_job(jobs_dir: Path, job_id: str, url: str) -> Job:
+    _validate_job_id(job_id)
     job_dir = jobs_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     job = Job(id=job_id, url=url, dir=job_dir)
@@ -55,6 +64,7 @@ def create_job(jobs_dir: Path, job_id: str, url: str) -> Job:
 
 
 def load_job(jobs_dir: Path, job_id: str) -> Job:
+    _validate_job_id(job_id)
     job_dir = jobs_dir / job_id
     path = job_dir / "job.json"
     if not path.exists():

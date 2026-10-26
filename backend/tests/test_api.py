@@ -172,7 +172,7 @@ def test_trim_validation(ready):
     assert client.patch("/api/candidates/99999", json={"selected": True}).status_code == 404
 
 
-def test_selection_render_gallery_zip(ready):
+def test_selection_render_gallery_zip(ready, tmp_path):
     app, client, job_id = ready
     assert client.post(f"/api/jobs/{job_id}/render", json={}).status_code == 400  # belum ada pilihan
 
@@ -209,9 +209,11 @@ def test_selection_render_gallery_zip(ready):
         "clips/clip_03.mp4", "clips/clip_03.txt", "thumbs/clip_03.png",
     ])
 
-    # trim setelah render → hasil lama ditandai perlu render ulang
+    # trim setelah render → hasil lama ditandai perlu render ulang & file fisik lama dihapus
+    assert (tmp_path / "jobs" / job_id / "clips" / "clip_01.mp4").exists()
     r = client.patch(f"/api/candidates/{c1['id']}", json={"start": 101})
     assert r.json()["clip_path"] is None
+    assert not (tmp_path / "jobs" / job_id / "clips" / "clip_01.mp4").exists()
 
 
 def test_delete_job(ready, tmp_path):

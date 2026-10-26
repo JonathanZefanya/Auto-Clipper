@@ -26,7 +26,11 @@ function fileName(path: string | null) {
 }
 
 function creditUrl(c: Candidate) {
-  return c.credit_path ? `/api/jobs/${c.job_id}/files/${c.credit_path}` : null
+  return c.credit_path ? `/api/jobs/${c.job_id}/files/${c.credit_path}` : undefined
+}
+
+function onTextChange(id: number, e: Event) {
+  if (e.target instanceof HTMLInputElement) emit('saveText', id, e.target.value)
 }
 </script>
 
@@ -89,7 +93,7 @@ function creditUrl(c: Candidate) {
               :value="c.thumb_text ?? ''"
               :disabled="locked"
               placeholder="otomatis dari transkrip"
-              @change="emit('saveText', c.id, ($event.target as HTMLInputElement).value)"
+              @change="onTextChange(c.id, $event)"
             />
           </div>
 
@@ -97,7 +101,7 @@ function creditUrl(c: Candidate) {
             <a v-if="c.clip_url" class="btn btn-ghost btn-sm" :href="c.clip_url" :download="fileName(c.clip_path)"><Icon name="download" :size="12" /> MP4</a>
             <a v-if="c.thumb_url" class="btn btn-ghost btn-sm" :href="c.thumb_url" :download="fileName(c.thumb_path)">PNG 9:16</a>
             <a v-if="c.thumb_landscape_url" class="btn btn-ghost btn-sm" :href="c.thumb_landscape_url" :download="fileName(c.thumb_landscape_path)">16:9</a>
-            <a v-if="creditUrl(c)" class="btn btn-ghost btn-sm" :href="creditUrl(c)!" :download="fileName(c.credit_path)" title="Judul, channel & link sumber untuk kredit">Kredit</a>
+            <a v-if="c.credit_path" class="btn btn-ghost btn-sm" :href="creditUrl(c)" :download="fileName(c.credit_path)" title="Judul, channel & link sumber untuk kredit">Kredit</a>
           </div>
         </div>
       </article>

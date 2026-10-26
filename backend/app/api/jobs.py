@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -35,6 +36,7 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 TERMINAL = ("ready_for_review", "done", "failed")
 SERVED_DIRS = ("clips", "thumbs")
+_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _job_out(job: Job, cands: list[Candidate], w: Worker) -> JobOut:
@@ -51,6 +53,12 @@ def _detail(job: Job, cands: list[Candidate], w: Worker) -> JobDetail:
 
 
 def _job_dir(cfg: AppConfig, job_id: str) -> Path:
+    if not _JOB_ID_RE.match(job_id):
+        raise HTTPException(404, f"Job {job_id} tidak ditemukan")
+    base = cfg.jobs_dir.resolve()
+    target = (base / job_id).resolve()
+    if target.parent != base:
+        raise HTTPException(404, f"Job {job_id} tidak ditemukan")
     return cfg.jobs_dir / job_id
 
 

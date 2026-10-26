@@ -33,8 +33,9 @@ const available = computed(() => EXTRAS.filter((e) => props.scores[`has_${e.key}
 
 function toggle(key: ExtraKey) {
   shown[key] = !shown[key]
-  const label = EXTRAS.find((e) => e.key === key)!.label
-  const ds = chart?.data.datasets.find((d) => d.label === label)
+  const extra = EXTRAS.find((e) => e.key === key)
+  if (!extra) return
+  const ds = chart?.data.datasets.find((d) => d.label === extra.label)
   if (ds) {
     ds.hidden = !shown[key]
     chart?.update('none')
@@ -171,7 +172,7 @@ function build() {
         },
       },
       onClick(_e, _els, c) {
-        const native = _e.native as MouseEvent | null
+        const native = _e.native instanceof MouseEvent ? _e.native : null
         if (!native) return
         const t = c.scales.x.getValueForPixel(native.offsetX)
         if (t == null) return
