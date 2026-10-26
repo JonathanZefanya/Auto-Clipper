@@ -107,6 +107,8 @@ def list_templates(templates_dir: Path) -> list[str]:
 
 
 def load_template(templates_dir: Path, name: str) -> Template:
+    if not _NAME_RE.match(name):
+        raise ValueError(f"Nama template tidak valid: {name!r} (pakai huruf, angka, - atau _)")
     path = templates_dir / f"{name}.json"
     if not path.exists():
         available = ", ".join(list_templates(templates_dir)) or "(kosong)"

@@ -11,6 +11,7 @@ from typing import Callable
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.engine import Engine
 from sqlmodel import select
@@ -115,6 +116,9 @@ def create_app(
     app.state.raw_config_loader = raw_config_loader
     app.state.sse_poll_s = sse_poll_s
 
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"],
+    )
     app.add_middleware(
         CORSMiddleware, allow_origins=DEV_ORIGINS, allow_methods=["*"], allow_headers=["*"],
     )

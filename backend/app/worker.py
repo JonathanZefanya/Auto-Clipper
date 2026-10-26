@@ -93,7 +93,7 @@ def reuse_existing_source(jobs_dir: Path, job_dir: Path, video_id: str) -> bool:
             continue
         meta = other / "meta.json"
         src = other / "source.mp4"
-        if not (src.exists() and meta.exists()):
+        if not (src.exists() and meta.exists() and src.stat().st_size > 0):
             continue
         try:
             if json.loads(meta.read_text(encoding="utf-8")).get("video_id") != video_id:

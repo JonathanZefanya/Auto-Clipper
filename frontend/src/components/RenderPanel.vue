@@ -29,6 +29,14 @@ function set<K extends keyof RenderOptions>(key: K, value: RenderOptions[K]) {
   emit('update:options', next)
 }
 
+function onTemplateChange(e: Event) {
+  if (e.target instanceof HTMLSelectElement) emit('update:template', e.target.value)
+}
+
+function onToggleOption(key: 'subtitle' | 'thumbnail' | 'landscape' | 'intro_frame', e: Event) {
+  if (e.target instanceof HTMLInputElement) set(key, e.target.checked)
+}
+
 // ---------- preview layout 9:16 dari frame video ini (salah posisi facecam terlihat sebelum render)
 const PW = 162
 const PH = 288
@@ -81,7 +89,7 @@ const toggles = [
           class="input"
           :value="template"
           :disabled="locked"
-          @change="emit('update:template', ($event.target as HTMLSelectElement).value)"
+          @change="onTemplateChange"
         >
           <option v-for="t in templates" :key="t.name" :value="t.name">
             {{ t.name }} — {{ t.layout_type === 'split' ? 'facecam + gameplay' : 'center crop' }}
@@ -123,7 +131,7 @@ const toggles = [
           <span class="block text-sm text-zinc-200">{{ t.label }}</span>
           <span class="block text-[11px] text-zinc-500">{{ t.hint }}</span>
         </span>
-        <input type="checkbox" class="check" :checked="options[t.key]" @change="set(t.key, ($event.target as HTMLInputElement).checked)" />
+        <input type="checkbox" class="check" :checked="options[t.key]" @change="onToggleOption(t.key, $event)" />
       </label>
     </section>
   </div>

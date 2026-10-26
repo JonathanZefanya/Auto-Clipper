@@ -41,4 +41,8 @@ def test_reuse_existing_source_none_available(tmp_path):
     jobs = tmp_path / "jobs"
     _make_job(jobs, "old", "AAAAAAAAAAA", with_source=False)
     assert not reuse_existing_source(jobs, jobs / "new", "AAAAAAAAAAA")
+    # file source.mp4 kosong (0 byte) dari unduhan gagal tidak boleh dipakai ulang
+    empty = _make_job(jobs, "empty", "CCCCCCCCCCC", with_source=False)
+    (empty / "source.mp4").write_bytes(b"")
+    assert not reuse_existing_source(jobs, jobs / "new2", "CCCCCCCCCCC")
     assert not reuse_existing_source(tmp_path / "missing", tmp_path / "x", "AAAAAAAAAAA")

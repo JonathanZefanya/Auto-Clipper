@@ -3,12 +3,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA_DIR = REPO_ROOT / "data"
+_ASS_COLOR_RE = re.compile(r"^&H[0-9A-Fa-f]{8}$")
+_SAFE_MODEL_URL_PREFIX = "https://storage.googleapis.com/mediapipe-models/"
+_WHISPER_MODELS = ("medium", "large-v3")
 
 
 class _Overridable:
@@ -323,6 +327,16 @@ def validate_settings(cfg: AppConfig) -> None:
         (0 <= d.chat_delay_s <= 60, "detect.chat_delay_s harus 0..60"),
         (d.download_max_height in (360, 480, 720, 1080, 1440, 2160), "resolusi unduhan tidak didukung"),
         (s.device in ("auto", "cuda", "cpu"), "subtitle.device harus auto|cuda|cpu"),
+        (s.model in _WHISPER_MODELS and s.cpu_model in _WHISPER_MODELS, "subtitle.model tidak didukung"),
+        (not any(tok in s.audio_filter.lower() for tok in (";", "movie", "\r", "\n")),
+         "subtitle.audio_filter tidak valid"),
+        (bool(s.font_name.strip()) and not any(ch in s.font_name for ch in ",\r\n{}"),
+         "subtitle.font_name tidak valid"),
+        (bool(_ASS_COLOR_RE.match(s.primary_color)) and bool(_ASS_COLOR_RE.match(s.outline_color)),
+         "warna subtitle ASS harus berformat &HAABBGGRR"),
+        (all(u.startswith(_SAFE_MODEL_URL_PREFIX)
+             for u in (d.reaction_model_url, d.face_model_url, cfg.thumbnail.face_model_url)),
+         "URL model harus berasal dari repositori resmi MediaPipe"),
         (cfg.render.video_encoder in ("auto", "h264_nvenc", "libx264"), "render.video_encoder tidak dikenal"),
     ]
     for ok, msg in checks:

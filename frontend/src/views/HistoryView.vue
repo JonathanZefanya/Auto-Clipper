@@ -24,10 +24,13 @@ const FILTERS = [
 
 const visible = computed(() => {
   const q = query.value.trim().toLowerCase()
-  const f = FILTERS.find((x) => x.key === filter.value)!
+  const f = FILTERS.find((x) => x.key === filter.value) ?? FILTERS[0]
   return jobs.list.filter((j) => f.match(j) && (!q || `${j.title} ${j.channel} ${j.url}`.toLowerCase().includes(q)))
 })
-const count = (key: (typeof FILTERS)[number]['key']) => jobs.list.filter(FILTERS.find((x) => x.key === key)!.match).length
+const count = (key: (typeof FILTERS)[number]['key']) => {
+  const f = FILTERS.find((x) => x.key === key) ?? FILTERS[0]
+  return jobs.list.filter(f.match).length
+}
 const anyActive = computed(() => jobs.list.some((j) => ACTIVE_STATUSES.includes(j.status)))
 
 async function refresh() {

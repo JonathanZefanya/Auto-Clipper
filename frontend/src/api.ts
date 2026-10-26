@@ -165,17 +165,21 @@ export class ApiError extends Error {
   }
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null
+}
+
 function detailMessage(detail: unknown, fallback: string): string {
   if (typeof detail === 'string') return detail
   if (Array.isArray(detail)) {
     return detail
-      .map((d) => (typeof d === 'object' && d && 'msg' in d ? String((d as { msg: unknown }).msg) : String(d)))
+      .map((d: unknown) => (isRecord(d) && 'msg' in d ? String(d.msg) : String(d)))
       .join('; ')
   }
   return fallback
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function sendRequest(method: string, path: string, body?: unknown): Promise<Response> {
   const res = await fetch(path, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
@@ -184,14 +188,25 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`
     try {
-      msg = detailMessage((await res.json()).detail, msg)
+      const parsed: unknown = await res.json()
+      if (isRecord(parsed) && 'detail' in parsed) {
+        msg = detailMessage(parsed.detail, msg)
+      }
     } catch {
       /* respons bukan JSON */
     }
     throw new ApiError(res.status, msg)
   }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
+  return res
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await sendRequest(method, path, body)
+  return await res.json()
+}
+
+async function requestVoid(method: string, path: string, body?: unknown): Promise<void> {
+  await sendRequest(method, path, body)
 }
 
 export const api = {
@@ -201,7 +216,7 @@ export const api = {
   listJobs: () => request<Job[]>('GET', '/api/jobs'),
   getJob: (id: string) => request<JobDetail>('GET', `/api/jobs/${id}`),
   updateJob: (id: string, body: { template: string }) => request<Job>('PATCH', `/api/jobs/${id}`, body),
-  deleteJob: (id: string) => request<void>('DELETE', `/api/jobs/${id}`),
+  deleteJob: (id: string) => requestVoid('DELETE', `/api/jobs/${id}`),
   scores: (id: string) => request<Scores>('GET', `/api/jobs/${id}/scores`),
   setSelection: (id: string, body: { selected?: boolean; ids?: number[] }) =>
     request<JobDetail>('POST', `/api/jobs/${id}/selection`, body),
@@ -216,13 +231,13 @@ export const api = {
   getSubtitles: (candidateId: number) => request<Subtitles>('GET', `/api/candidates/${candidateId}/subtitles`),
   saveSubtitles: (candidateId: number, lines: SubLine[]) =>
     request<Subtitles>('PUT', `/api/candidates/${candidateId}/subtitles`, { lines }),
-  resetSubtitles: (candidateId: number) => request<void>('DELETE', `/api/candidates/${candidateId}/subtitles`),
+  resetSubtitles: (candidateId: number) => requestVoid('DELETE', `/api/candidates/${candidateId}/subtitles`),
   detectFacecam: (id: string, top_ratio: number) =>
     request<FacecamResult>('POST', `/api/jobs/${id}/detect-facecam`, { top_ratio }),
   openFolder: (id: string) => request<{ path: string; opened: boolean }>('POST', `/api/jobs/${id}/open-folder`),
   templates: () => request<Template[]>('GET', '/api/templates'),
   saveTemplate: (t: Template) => request<Template>('POST', '/api/templates', t),
-  deleteTemplate: (name: string) => request<void>('DELETE', `/api/templates/${name}`),
+  deleteTemplate: (name: string) => requestVoid('DELETE', `/api/templates/${name}`),
   settings: () => request<Settings>('GET', '/api/settings'),
   saveSettings: (body: Record<string, unknown>) => request<Settings>('PUT', '/api/settings', body),
 

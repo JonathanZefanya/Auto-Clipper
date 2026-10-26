@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -134,6 +135,15 @@ def _run_ffmpeg(cmd: list[str], cwd: Path, duration: float, on_progress: Progres
         encoding="utf-8", errors="replace",
     )
     assert proc.stdout is not None and proc.stderr is not None
+    stderr_lines: list[str] = []
+
+    def _drain_stderr() -> None:
+        assert proc.stderr is not None
+        for err_line in proc.stderr:
+            stderr_lines.append(err_line)
+
+    stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+    stderr_thread.start()
     try:
         for line in proc.stdout:
             key, _, value = line.strip().partition("=")
@@ -142,13 +152,15 @@ def _run_ffmpeg(cmd: list[str], cwd: Path, duration: float, on_progress: Progres
     except BaseException:
         # dibatalkan (on_progress melempar) → hentikan FFmpeg, jangan biarkan jalan di belakang
         proc.kill()
-        proc.wait()
-        proc.stdout.close()
-        proc.stderr.close()
         raise
-    stderr = proc.stderr.read()
-    if proc.wait() != 0:
-        raise RuntimeError(stderr.strip() or f"FFmpeg exit {proc.returncode}")
+    finally:
+        proc.stdout.close()
+        stderr_thread.join(timeout=2.0)
+        proc.stderr.close()
+        code = proc.wait()
+    if code != 0:
+        stderr = "".join(stderr_lines).strip()
+        raise RuntimeError(stderr or f"FFmpeg exit {code}")
 
 
 def render_clip(

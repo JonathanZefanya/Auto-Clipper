@@ -2,6 +2,18 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ACTIVE_STATUSES, api, type Candidate, type Job, type JobDetail, type RenderOptions, type Scores } from '@/api'
 
+function parseJobEvent(raw: string): Job | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed === 'object' && parsed !== null && 'id' in parsed && typeof parsed.id === 'string') {
+      return JSON.parse(raw)
+    }
+  } catch {
+    /* abaikan payload rusak */
+  }
+  return null
+}
+
 export const useJobsStore = defineStore('jobs', () => {
   const list = ref<Job[]>([])
   const current = ref<JobDetail | null>(null)
@@ -37,7 +49,9 @@ export const useJobsStore = defineStore('jobs', () => {
     watchedId = id
     source = new EventSource(api.eventsUrl(id))
     source.addEventListener('job', (ev) => {
-      const data = JSON.parse((ev as MessageEvent).data) as Job
+      if (!(ev instanceof MessageEvent) || typeof ev.data !== 'string') return
+      const data = parseJobEvent(ev.data)
+      if (!data) return
       if (current.value?.id === data.id) Object.assign(current.value, data)
       const idx = list.value.findIndex((j) => j.id === data.id)
       if (idx >= 0) list.value[idx] = { ...list.value[idx], ...data }
@@ -60,6 +74,7 @@ export const useJobsStore = defineStore('jobs', () => {
     const idx = current.value.candidates.findIndex((x) => x.id === c.id)
     if (idx >= 0) current.value.candidates[idx] = c
     current.value.selected_count = current.value.candidates.filter((x) => x.selected).length
+    current.value.clip_count = current.value.candidates.filter((x) => x.clip_path).length
     const sc = scores.value?.candidates.find((x) => x.id === c.id)
     if (sc) Object.assign(sc, { start: c.start, end: c.end, selected: c.selected })
   }

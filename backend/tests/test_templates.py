@@ -18,6 +18,8 @@ def test_missing_template_lists_available(tmp_path):
     ensure_default_templates(tmp_path)
     with pytest.raises(ValueError, match="center"):
         load_template(tmp_path, "tidak-ada")
+    with pytest.raises(ValueError, match="Nama template tidak valid"):
+        load_template(tmp_path, "../rahasia")
 
 
 @pytest.mark.parametrize("bad", [

@@ -45,9 +45,11 @@ watch(jobId, () => {
 })
 
 function load(tpl: Template) {
-  // tpl berasal dari store Pinia (Proxy reaktif) → structuredClone gagal; template hanya data JSON
-  Object.assign(edit, JSON.parse(JSON.stringify(tpl)) as Template)
-  delete (edit as Partial<Template>).builtin
+  edit.name = tpl.name
+  edit.layout_type = tpl.layout_type
+  edit.facecam_box = tpl.facecam_box ? { ...tpl.facecam_box } : null
+  edit.gameplay_box = tpl.gameplay_box ? { ...tpl.gameplay_box } : null
+  edit.top_ratio = tpl.top_ratio
   mode.value = edit.layout_type === 'split' ? 'facecam' : 'gameplay'
 }
 
@@ -57,7 +59,9 @@ function newTemplate() {
 
 // ---------- menggambar kotak di atas frame
 function rel(e: PointerEvent) {
-  const r = frameEl.value!.getBoundingClientRect()
+  const el = frameEl.value
+  if (!el) return { x: 0, y: 0 }
+  const r = el.getBoundingClientRect()
   return {
     x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
     y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
@@ -74,7 +78,13 @@ function setBox(b: Box) {
 function onDown(e: PointerEvent) {
   const p = rel(e)
   drag.value = { x0: p.x, y0: p.y }
-  ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  if (e.target instanceof HTMLElement) e.target.setPointerCapture(e.pointerId)
+}
+function onFrameLoad(e: Event) {
+  if (e.target instanceof HTMLImageElement) {
+    natural.w = e.target.naturalWidth
+    natural.h = e.target.naturalHeight
+  }
 }
 function onMove(e: PointerEvent) {
   if (!drag.value) return
@@ -237,7 +247,7 @@ async function remove(name: string) {
             class="pointer-events-none block w-full"
             alt="frame sumber"
             draggable="false"
-            @load="(e) => { natural.w = (e.target as HTMLImageElement).naturalWidth; natural.h = (e.target as HTMLImageElement).naturalHeight }"
+            @load="onFrameLoad"
           />
           <div v-if="edit.layout_type === 'split'" class="pointer-events-none absolute border-2 border-pink-400 bg-pink-400/15" :style="boxStyle(edit.facecam_box)">
             <span class="absolute -top-0.5 left-0 bg-pink-500 px-1 text-[10px] text-white">facecam</span>
