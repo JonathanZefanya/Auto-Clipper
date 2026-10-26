@@ -17,7 +17,15 @@ from app.config import TitleConfig
 
 
 class TitleError(RuntimeError):
-    """Kesalahan yang pesannya langsung ditampilkan ke pengguna (Bahasa Indonesia)."""
+    """Kesalahan yang pesannya langsung ditampilkan ke pengguna (Bahasa Indonesia).
+
+    `unavailable=True` → LLM tidak bisa dipakai sama sekali (Ollama tidak jalan / model belum
+    diunduh / tidak menjawab) sehingga boleh jatuh ke saran heuristik.
+    """
+
+    def __init__(self, message: str, unavailable: bool = False) -> None:
+        super().__init__(message)
+        self.unavailable = unavailable
 
 
 @dataclass
@@ -35,6 +43,7 @@ class TitleSuggestion:
     description: str = ""
     hashtags: list[str] = field(default_factory=list)
     model: str = ""
+    note: str = ""          # mis. alasan memakai saran heuristik tanpa LLM
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -159,13 +168,15 @@ class OllamaClient:
             except (ValueError, OSError):
                 pass
             if e.code == 404 and "not found" in detail:
-                raise TitleError(f"Model belum diunduh. Jalankan: ollama pull {body.get('model') if body else ''}".strip()) from e
+                model = body.get("model", "") if body else ""
+                raise TitleError(f"Model belum diunduh. Jalankan: ollama pull {model}".strip(), unavailable=True) from e
             raise TitleError(f"Ollama error {e.code}: {detail or e.reason}") from e
         except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as e:
             if isinstance(e, TimeoutError) or "timed out" in str(e):
-                raise TitleError(f"Ollama tidak menjawab dalam {self.timeout:g} detik.") from e
+                raise TitleError(f"Ollama tidak menjawab dalam {self.timeout:g} detik.", unavailable=True) from e
             raise TitleError(
-                f"Ollama tidak jalan di {self.base}. Buka aplikasi Ollama atau jalankan `ollama serve`."
+                f"Ollama tidak jalan di {self.base}. Pasang/buka Ollama atau jalankan `ollama serve`.",
+                unavailable=True,
             ) from e
 
     def models(self) -> list[str]:
@@ -189,11 +200,93 @@ def model_installed(model: str, installed: Sequence[str]) -> bool:
     return want in installed or model in installed
 
 
+HEURISTIC_MODEL = "heuristik (tanpa LLM)"
+_SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+_STOP = {
+    "yang", "dan", "di", "ke", "dari", "ini", "itu", "untuk", "dengan", "the", "and", "indonesia",
+    # kata generik judul video yang tidak berguna sebagai hashtag
+    "mode", "player", "part", "episode", "full", "video", "live", "stream", "ending", "main",
+}
+
+
+# kata reaksi khas streamer Indonesia → kalimat yang memuatnya lebih "klip-able"
+_REACTION_WORDS = {
+    "aduh", "waduh", "gawat", "gila", "anjir", "anjay", "astaga", "ampun", "hampir", "ketahuan",
+    "kaget", "takut", "serem", "seram", "kabur", "lari", "mati", "wah", "wih", "hah", "loh", "lho",
+    "parah", "mampus", "tolong", "awas", "akhirnya", "berhasil", "menang", "kalah", "bahaya",
+}
+
+
+def _squash_repeats(s: str) -> str:
+    """'Gawat, gawat, gawat, gawat' → 'Gawat, gawat!' (pengulangan ≥3 kata yang sama)."""
+    def repl(m: re.Match) -> str:
+        w = m.group(1)
+        return f"{w}, {w.lower()}!"
+    return re.sub(r"\b(\w+)(?:[,\s]+\1\b){2,}[.!,]?", repl, s, flags=re.IGNORECASE)
+
+
+def _sentence_case(s: str) -> str:
+    s = s.strip()
+    if s.isupper():
+        # "GOCEK NUN" → "Gocek Nun" (frasa pendek), kalimat panjang → huruf kecil biasa
+        return s.title() if len(s.split()) <= 5 else s[:1] + s[1:].lower()
+    return s[:1].upper() + s[1:]
+
+
+def heuristic_suggest(ctx: ClipContext, cfg: TitleConfig, reason: str = "") -> TitleSuggestion:
+    """Saran sederhana tanpa LLM (Ollama belum ada): teks thumbnail + kalimat paling ekspresif di
+    transkrip (seru '!' / tanya '?', panjang 3–12 kata) + konteks judul sumber. Tidak mengarang isi."""
+    sentences = [_squash_repeats(s.strip(" ,;:")) for s in _SENT_SPLIT.split(ctx.transcript) if s.strip()]
+
+    def score(s: str) -> float:
+        words = re.findall(r"[\w-]+", s.lower())
+        n = len(words)
+        if n < 2 or n > 14:
+            return -1.0
+        emotion = min(2, sum(1 for w in words if w in _REACTION_WORDS))
+        length = 1.0 if 3 <= n <= 7 else 0.4 if n <= 10 else 0.1   # judul Shorts: pendek & padat
+        return 2.0 * ("!" in s) + 0.5 * ("?" in s) + 1.5 * emotion + length
+
+    ranked = [s for s in sorted(sentences, key=score, reverse=True) if score(s) > 0]
+    source_short = re.split(r"\s[-|–:]\s", ctx.source_title)[0].strip() if ctx.source_title else ""
+
+    raw: list[str] = []
+    if ctx.thumb_text:
+        raw.append(_sentence_case(ctx.thumb_text))
+    raw += [_sentence_case(s) for s in ranked[: cfg.count]]
+    if ranked and source_short:
+        raw.append(f"{_sentence_case(ranked[0]).rstrip('.')} | {source_short}")
+    if not raw:
+        raise TitleError("Transkrip klip terlalu pendek untuk dibuatkan judul.")
+
+    titles: list[str] = []
+    for t in raw:
+        ct = clean_title(t, cfg.max_title_chars)
+        if ct and ct.lower() not in {x.lower() for x in titles}:
+            titles.append(ct)
+
+    tags: list[str] = []
+    for cand in [ctx.channel, *[w for w in re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", source_short)
+                                 if w.lower() not in _STOP][:3], "Shorts"]:
+        h = clean_hashtag(cand) if cand else None
+        if h and h.lower() not in {x.lower() for x in tags}:
+            tags.append(h)
+    desc = " ".join(sentences[:2])[:200]
+    note = (reason + " " if reason else "") + "Saran sederhana tanpa LLM — pasang Ollama untuk hasil lebih baik."
+    return TitleSuggestion(titles[: cfg.count], desc, tags[: cfg.hashtags], HEURISTIC_MODEL, note.strip())
+
+
 def suggest(ctx: ClipContext, cfg: TitleConfig, client: OllamaClient | None = None) -> TitleSuggestion:
     if not cfg.enabled:
         raise TitleError("Saran judul dimatikan di Pengaturan.")
-    if not ctx.transcript.strip():
+    if not ctx.transcript.strip() and not ctx.thumb_text.strip():
         raise TitleError("Transkrip klip kosong — tidak ada ucapan untuk dijadikan judul.")
     client = client or OllamaClient(cfg.ollama_url, cfg.timeout_s)
-    content = client.chat(cfg.model, build_messages(ctx, cfg), response_schema(cfg), cfg.temperature, cfg.keep_alive)
+    try:
+        content = client.chat(cfg.model, build_messages(ctx, cfg), response_schema(cfg), cfg.temperature, cfg.keep_alive)
+    except TitleError as e:
+        # Ollama belum terpasang/jalan atau model belum diunduh → tetap beri saran (heuristik)
+        if e.unavailable and cfg.fallback_heuristic:
+            return heuristic_suggest(ctx, cfg, reason=str(e))
+        raise
     return parse_suggestion(content, cfg, cfg.model)

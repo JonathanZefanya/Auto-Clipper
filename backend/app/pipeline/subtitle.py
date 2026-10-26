@@ -82,6 +82,9 @@ def _register_cuda_dlls() -> None:
     import site
 
     roots = [*site.getsitepackages(), site.getusersitepackages()]
+    bundle = getattr(sys, "_MEIPASS", None)  # aplikasi desktop (PyInstaller, F-20)
+    if bundle:
+        roots.insert(0, bundle)
     for root in roots:
         for d in glob.glob(os.path.join(root, "nvidia", "*", "bin")):
             try:

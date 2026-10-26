@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Auto Clipper</title>
+    <!-- F-20: splash selama backend Python menyala. setStatus()/showError() dipanggil dari Rust (eval). -->
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #09090b; color: #e4e4e7;
+        font: 14px/1.5 Inter, "Segoe UI", system-ui, sans-serif; }
+      main { height: 100%; display: grid; place-items: center; }
+      .box { width: min(440px, 90vw); display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center; }
+      .logo { width: 56px; height: 56px; border-radius: 14px; background: oklch(0.58 0.21 292);
+        display: grid; place-items: center; box-shadow: 0 10px 40px -10px oklch(0.58 0.21 292 / 0.7); }
+      h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+      #status { color: #a1a1aa; min-height: 21px; }
+      .bar { width: 220px; height: 3px; border-radius: 3px; background: #212127; overflow: hidden; }
+      .bar::after { content: ""; display: block; width: 40%; height: 100%; border-radius: 3px;
+        background: oklch(0.66 0.2 292); animation: slide 1.2s ease-in-out infinite; }
+      @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      #error { display: none; width: 100%; text-align: left; border: 1px solid #7f1d1d; background: #450a0a55;
+        border-radius: 8px; padding: 12px; color: #fecaca; white-space: pre-wrap; }
+      #error code { color: #fca5a5; word-break: break-all; }
+      .err .bar { display: none; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="box">
+        <div class="logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12" />
+          </svg>
+        </div>
+        <h1>Auto Clipper</h1>
+        <div id="status">Menyiapkan…</div>
+        <div class="bar"></div>
+        <div id="error"></div>
+      </div>
+    </main>
+    <script>
+      window.setStatus = (msg) => { document.getElementById('status').textContent = msg }
+      window.showError = (msg, log) => {
+        document.body.classList.add('err')
+        document.getElementById('status').textContent = 'Backend gagal dinyalakan'
+        const el = document.getElementById('error')
+        el.style.display = 'block'
+        el.textContent = msg
+        if (log) {
+          const p = document.createElement('div')
+          p.style.marginTop = '8px'
+          p.append('Detail di log: ')
+          const c = document.createElement('code')
+          c.textContent = log
+          p.append(c)
+          el.append(p)
+        }
+      }
+    </script>
+  </body>
+</html>

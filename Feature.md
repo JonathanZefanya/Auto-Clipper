@@ -29,6 +29,7 @@ Daftar fitur beserta kriteria penerimaan. Konteks produk ada di `PRD.md`.
 | F-17 | Auto-deteksi posisi facecam | P1 | M5 |
 | F-18 | Deteksi reaksi wajah (ekspresi) | P1 | M6 |
 | F-19 | Saran judul klip (LLM lokal / Ollama) | P1 | M7 |
+| F-20 | Aplikasi desktop (Tauri) | P1 | M8 |
 
 ---
 
@@ -213,6 +214,18 @@ Sinyal tambahan untuk YouTuber yang menampilkan wajah (facecam / face reveal).
 - Jika Ollama tidak jalan / model belum diunduh / klip belum ditranskripsi → pesan jelas apa yang harus dilakukan.
 - URL Ollama hanya boleh localhost; model & URL bisa diatur di Pengaturan.
 
+## F-20 — Aplikasi Desktop (Tauri)
+
+Kode di folder `frontend-desktop/` (shell Tauri v2); UI tetap satu, yaitu build `frontend/`.
+
+**Kriteria penerimaan**
+- Membuka aplikasi → splash → backend Python hasil bundel (PyInstaller, onedir) dijalankan otomatis di `127.0.0.1` port bebas → jendela menampilkan UI yang sama dengan versi web.
+- Menutup aplikasi → backend dan proses anaknya (FFmpeg) ikut berhenti; hanya satu instance aplikasi (instance kedua memfokuskan jendela yang ada).
+- Installer Windows (NSIS) berisi backend + FFmpeg/FFprobe (+ Deno bila ada); data job di folder data aplikasi pengguna (`%APPDATA%`), bukan folder instalasi.
+- Model Whisper/MediaPipe/LLM tidak dibundel (diunduh saat pertama dipakai seperti versi web); Ollama tetap aplikasi terpisah.
+- Mode pengembangan (`tauri dev`) memakai `backend/.venv` dan folder `data/` repo.
+- Bila backend gagal start: splash menampilkan pesan + lokasi file log.
+
 ---
 
 ## Rancangan API (Backend FastAPI)
@@ -279,5 +292,5 @@ auto-clipper/
 - ~~Saran judul klip dengan LLM lokal (Ollama)~~ → F-19 (M7).
 - ~~Edit teks subtitle sebelum render~~ → F-16 (M5).
 - ~~Auto-deteksi posisi facecam~~ → F-17 (M5).
-- Pembungkus aplikasi desktop (Tauri).
+- ~~Pembungkus aplikasi desktop (Tauri)~~ → F-20 (M8).
 - Dukungan sumber Twitch VOD.

@@ -236,6 +236,8 @@ class TitleConfig(_Overridable):
     temperature: float = 0.8
     timeout_s: int = 180                # termasuk waktu memuat model ke VRAM
     keep_alive: str = "0"               # "0" = unload segera → VRAM bebas untuk Whisper/NVENC
+    # Ollama belum terpasang/jalan atau model belum diunduh → saran heuristik tanpa LLM
+    fallback_heuristic: bool = True
 
 
 SECTIONS: dict[str, type] = {

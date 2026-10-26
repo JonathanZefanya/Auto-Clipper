@@ -120,6 +120,7 @@ export interface TitleSuggestions {
   description: string
   hashtags: string[]
   model: string
+  note?: string   // mis. "Ollama tidak jalan … Saran sederhana tanpa LLM"
 }
 
 export interface LlmStatus {

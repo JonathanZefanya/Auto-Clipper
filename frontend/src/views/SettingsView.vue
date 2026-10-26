@@ -253,7 +253,10 @@ async function save() {
             <span class="flex-1">
               <template v-if="!llm">Memeriksa Ollama…</template>
               <template v-else-if="llm.model_ready">Ollama jalan · model <b>{{ llm.model }}</b> siap.</template>
-              <template v-else>{{ llm.error }}</template>
+              <template v-else>
+                {{ llm.error }}
+                <span class="block text-zinc-400">Sementara itu tombol Sarankan tetap jalan dengan metode sederhana tanpa LLM.</span>
+              </template>
             </span>
             <button type="button" class="btn btn-quiet btn-sm" :disabled="llmChecking" @click="checkLlm">Cek ulang</button>
           </div>

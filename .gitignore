@@ -6,3 +6,7 @@ __pycache__/
 node_modules/
 dist/
 CLAUDE.md
+# F-20 aplikasi desktop
+backend/build/
+frontend-desktop/src-tauri/target/
+frontend-desktop/src-tauri/gen/

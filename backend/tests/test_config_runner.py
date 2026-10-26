@@ -39,6 +39,20 @@ def test_save_settings_rejects_invalid(tmp_path, updates):
     assert not (tmp_path / "config.json").exists()
 
 
+def test_frontend_dist_resolution_for_desktop(monkeypatch, tmp_path):
+    """F-20: env > bundel PyInstaller (sys._MEIPASS) > <repo>/frontend/dist."""
+    import sys
+
+    from app import main
+
+    monkeypatch.delenv("AUTOCLIP_FRONTEND_DIST", raising=False)
+    assert main._frontend_dist() == main.REPO_ROOT / "frontend" / "dist"
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    assert main._frontend_dist() == tmp_path / "frontend_dist"
+    monkeypatch.setenv("AUTOCLIP_FRONTEND_DIST", str(tmp_path / "x"))
+    assert main._frontend_dist() == tmp_path / "x"
+
+
 def test_credit_text():
     txt = credit_text(Credit("Judul", "https://www.youtube.com/watch?v=abc", "Chan"), 3725.4, 3760)
     assert "Link sumber  : https://www.youtube.com/watch?v=abc&t=3725s" in txt

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime
@@ -25,7 +27,18 @@ from app.templates import ensure_default_templates
 from app.worker import Worker
 
 log = logging.getLogger("autoclip")
-FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
+def _frontend_dist() -> Path:
+    """Build UI: env AUTOCLIP_FRONTEND_DIST > bundel PyInstaller (F-20) > <repo>/frontend/dist."""
+    env = os.environ.get("AUTOCLIP_FRONTEND_DIST")
+    if env:
+        return Path(env)
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        return Path(bundle) / "frontend_dist"
+    return REPO_ROOT / "frontend" / "dist"
+
+
+FRONTEND_DIST = _frontend_dist()
 DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 

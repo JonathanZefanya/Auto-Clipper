@@ -196,6 +196,19 @@ data/
 - Urutan render menjaga VRAM: transkripsi semua klip → unload model → thumbnail (CPU) → encode NVENC.
 - Render pertama mengunduh model Whisper dari Hugging Face (`large-v3` ±3 GB). Pakai `medium` jika ingin lebih cepat/ringan.
 
+## Aplikasi desktop (Tauri)
+
+Versi desktop ada di [frontend-desktop/](frontend-desktop/README.md): jendela native dengan UI yang sama, backend Python
+dibundel (PyInstaller) dan dinyalakan/dimatikan otomatis, installer NSIS. Butuh Rust + Visual Studio C++ Build Tools
+untuk build; lihat README di folder itu.
+
+```powershell
+cd frontend-desktop
+npm install
+npm run dev      # jendela desktop memakai backend/.venv
+npm run build    # installer → src-tauri/target/release/bundle/nsis/
+```
+
 ## Pengembangan
 
 ```
@@ -233,4 +246,4 @@ Spesifikasi produk di [PRD.md](PRD.md) dan [Feature.md](Feature.md).
 
 ## Rencana berikutnya
 
-Aplikasi desktop (Tauri), dukungan Twitch VOD. Lihat bagian "Later" di [Feature.md](Feature.md).
+Dukungan Twitch VOD. Lihat bagian "Later" di [Feature.md](Feature.md).

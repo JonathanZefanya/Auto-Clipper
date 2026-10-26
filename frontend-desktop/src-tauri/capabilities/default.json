@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Splash lokal saja. UI utama dimuat dari backend (http://127.0.0.1) tanpa akses IPC Tauri.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

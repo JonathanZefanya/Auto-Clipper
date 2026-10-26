@@ -1,0 +1,17 @@
+{
+  "name": "auto-clip-desktop",
+  "private": true,
+  "version": "0.8.0",
+  "description": "Auto Clipper — aplikasi desktop (Tauri v2). UI = build ../frontend, backend = bundel PyInstaller ../backend.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "npm --prefix ../frontend run build && tauri dev",
+    "build:frontend": "npm --prefix ../frontend run build",
+    "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
+    "build": "npm run build:backend && tauri build --config src-tauri/tauri.bundle.conf.json",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-icons.ps1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0"
+  }
+}

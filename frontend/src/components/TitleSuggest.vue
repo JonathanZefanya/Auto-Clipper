@@ -109,6 +109,12 @@ async function copy(text: string, key: string) {
           </button>
         </div>
       </div>
+      <p
+        v-if="candidate.suggestions.note"
+        class="flex items-start gap-1.5 rounded border border-amber-900/70 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-200"
+      >
+        <Icon name="info" :size="12" class="mt-0.5" /> {{ candidate.suggestions.note }}
+      </p>
       <p class="text-[10px] text-zinc-600">oleh {{ candidate.suggestions.model }} · ikut tersimpan di file kredit .txt</p>
     </template>
   </div>

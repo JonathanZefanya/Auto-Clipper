@@ -112,13 +112,41 @@ def test_client_chat_sends_schema_and_unloads(ollama_url):
 
 def test_client_errors_are_actionable(ollama_url):
     with pytest.raises(TitleError, match="ollama pull llama9"):
-        suggest(ClipContext("x"), TitleConfig(ollama_url=ollama_url, model="llama9"))
+        suggest(ClipContext("x"), TitleConfig(ollama_url=ollama_url, model="llama9", fallback_heuristic=False))
     with pytest.raises(TitleError, match="tidak jalan"):
-        suggest(ClipContext("x"), TitleConfig(ollama_url="http://127.0.0.1:9", timeout_s=5))
+        suggest(ClipContext("x"), TitleConfig(ollama_url="http://127.0.0.1:9", timeout_s=5, fallback_heuristic=False))
     with pytest.raises(TitleError, match="kosong"):
         suggest(ClipContext("   "), TitleConfig(ollama_url=ollama_url))
     with pytest.raises(TitleError, match="dimatikan"):
         suggest(ClipContext("x"), TitleConfig(enabled=False))
+
+
+REAL_CTX = ClipContext(  # transkrip nyata klip 4:35–5:10 (Evil Nun, MiawAug)
+    transcript="Aduh, gimana ya, teman-teman? Ini tricky banget masalahnya. Cookie box-nya akan ada suaranya "
+               "pas kita buka, apa namanya? Nail-nya. Hampir aja gue ketahuan. Ya ampun, bad timing banget. "
+               "Gawat, gawat, gawat, gawat. Tutup lagi boleh nggak? Nggak usah, jangan dulu ditutup.",
+    source_title="Pro Player Di Extreme Mode - Evil Nun The Broken Mask Indonesia (Main Door Ending)",
+    channel="MiawAug", thumb_text="GOCEK NUN", duration_s=35,
+)
+
+
+def test_fallback_heuristic_when_ollama_missing():
+    """Ollama belum terpasang (port tertutup) → tetap dapat saran, ditandai tanpa LLM."""
+    cfg = TitleConfig(ollama_url="http://127.0.0.1:9", timeout_s=5)
+    s = suggest(REAL_CTX, cfg)
+    assert s.model == "heuristik (tanpa LLM)" and "tidak jalan" in s.note and "Ollama" in s.note
+    # teks thumbnail, lalu kalimat reaksi pendek (pengulangan dipadatkan), bukan kalimat panjang
+    assert s.titles == ["Gocek Nun", "Gawat, gawat!", "Hampir aja gue ketahuan."]
+    assert s.hashtags[0] == "#MiawAug" and "#Shorts" in s.hashtags and "#Extreme" in s.hashtags
+    assert "#Mode" not in s.hashtags and "#Player" not in s.hashtags
+    assert s.description.startswith("Aduh, gimana ya, teman-teman?")
+
+
+def test_fallback_model_missing_and_disabled(ollama_url):
+    s = suggest(REAL_CTX, TitleConfig(ollama_url=ollama_url, model="belum-ada:1b"))
+    assert s.model == "heuristik (tanpa LLM)" and "ollama pull belum-ada:1b" in s.note
+    with pytest.raises(TitleError, match="terlalu pendek"):
+        suggest(ClipContext("ya"), TitleConfig(ollama_url="http://127.0.0.1:9", timeout_s=5))
 
 
 # ---------------------------------------------------------------- runner & config
